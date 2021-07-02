@@ -1,0 +1,651 @@
+<script type="text/javascript">
+
+  var currentPage = 'cart'
+      ,   cartEndpoint = 'https://api.dooki.com.br/v2/public/shopify/cart'
+      ,   statusEndpoint = 'https://api.dooki.com.br/v2/public/shopify/status'
+      ,   shop = 'https://astrohappy.com.br';
+
+  window.yampiCheckoutUrl = '';
+
+  var checkoutBtncss = '<style id="ymp-btn-style" type="text/css"> body .ymp-CrtpageMainFrm input[type="submit"]:not([name="update"]), body .ymp-CrtpageMainFrm button[type="submit"]:not([name="update"]), body .ymp_check_mainBtn[name="checkout"]:not([class*="ymp_elem_"]):not([name="update"]), body input.ymp_check_mainBtn:not([class*="ymp_elem_"]):not([name="update"]) { display: none !important; }body .ymp-CrtpageMainFrm .ymp_check_mainBtn.ymp_elem_mainBtn[type="submit"]:not(.bold_hidden){ display: inline-block !important; } </style>';
+  
+  function showYampiLoader() {
+      var el = document.querySelector('.yampi-loader');
+      el.style.display = 'block';
+  }
+
+  function hideYampiLoader() {
+      var el = document.querySelector('.yampi-loader');
+      el.style.display = 'none';
+  }
+
+  // Cart
+  if (currentPage == 'cart') {
+      showYampiLoader();
+
+      getAjax('/cart.json', function (response) {
+          var cartPayload = JSON.parse(response);
+
+          var data = {
+              shop: window.location.host,
+              cart_payload: cartPayload
+          };
+          
+          postAjax(cartEndpoint, JSON.stringify(data), function (response) {
+              var resp = JSON.parse(response);
+
+              if (!resp.active) {
+                  hideYampiLoader();
+              } else {
+
+                  var otherButtons = document.getElementsByClassName('cartX_check_mainBtn');
+
+                  for (var i = 0; i < otherButtons.length; i ++) {
+                      otherButtons[i].setAttribute('style', 'display: none !important');
+                  }
+
+                  window.yampiCheckoutUrl = resp.checkout_direct_url;
+
+                  if (resp.skip_cart && resp.checkout_direct_url != '') {
+                      // Limpa o carrinho do Shopify
+                      postAjax('/cart/clear.js', JSON.stringify({}), function () {
+                          window.location = resp.checkout_direct_url;
+                      });
+                  } else {
+                      hideYampiLoader();
+
+                      var getHead = document.getElementsByTagName('head')[0];
+                      getHead.insertAdjacentHTML('beforeend', checkoutBtncss);
+                      var getForm = document.getElementsByTagName('form'); var cartFrmId,getCheckoutBtn;
+
+                      for (var i = 0; i < getForm.length; i++) {
+                          var formAction = getForm[i].action;  formAction = formAction.split(shop);
+                          
+                          if (formAction.includes('/cart') == true || formAction[0].includes('/cart') == true) {
+                              if (getForm[i].getAttribute('id')){
+                                  cartFrmId = getForm[i].getAttribute('id');
+                              } else {
+                                  getForm[i].setAttribute('id','ymp-CrtpageMainFrm'); cartFrmId = getForm[i].getAttribute('id');
+                              }
+                              getForm[i].classList.add('ymp-CrtpageMainFrm');
+                              getCheckoutBtn = getForm[i].elements['checkout'] || document.querySelector('a[href="/checkout"]') || document.querySelector('form[action="/cart"] input[type="submit"]');
+
+                              if (getCheckoutBtn.length == undefined) {
+                                  var buttonValue = getCheckoutBtn.value ? getCheckoutBtn.value : getCheckoutBtn.textContent;
+                              } else {
+                                  var lastBtnID = getCheckoutBtn.length - 1;
+                                  var buttonValue = getCheckoutBtn[lastBtnID].value ? getCheckoutBtn[lastBtnID].value : getCheckoutBtn[lastBtnID].textContent;
+                              }
+                              var getSubBtnId = getCheckoutBtn.id;
+                              if (getSubBtnId) {
+                                  getSubBtnId = getSubBtnId+'ympButton';
+                              } else {
+                                  getSubBtnId = 'ympBtn';
+                              }
+
+                              if (getCheckoutBtn.length == undefined) {
+                                  var inptBtn = `<button type='submit' class='`+getCheckoutBtn.className+` ymp_check_mainBtn ymp_elem_mainBtn' id='`+getSubBtnId+`'>`+buttonValue+`</button>`;
+                                  getCheckoutBtn.insertAdjacentHTML('afterEnd', inptBtn);
+                              } else {
+                                  var inptBtn = `<button type='submit' class='`+getCheckoutBtn[getCheckoutBtn.length - 1].className+` ymp_check_mainBtn ymp_elem_mainBtn' id='`+getSubBtnId+`'>`+buttonValue+`</button>`;
+                                  getCheckoutBtn[getCheckoutBtn.length - 1].insertAdjacentHTML('afterEnd', inptBtn);
+                              }
+
+                              document.getElementById(getSubBtnId).addEventListener('click', fakeClick);
+                          }
+                      }
+
+                      // Tratamento com links dentro do carrinho.
+                      if (window.$ || window.jQuery) {
+                          var btns = $('a.btn-checkout[href="/checkout"]').not('.ymp_elem_mainBtn');
+                          btns.hide();
+                      }
+                  }
+              }
+          });
+
+      });
+  }
+
+  function getAjax(url, success) {
+      var xhr = window.XMLHttpRequest ? new XMLHttpRequest() : new ActiveXObject('Microsoft.XMLHTTP');
+      xhr.open('GET', url);
+      xhr.onreadystatechange = function() {
+          if (xhr.readyState > 3 && xhr.status==200) success(xhr.responseText);
+      };
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+      xhr.send();
+      return xhr;
+  }
+
+  function postAjax(url, data, success) {
+      var params = typeof data == 'string' ? data : Object.keys(data).map(
+              function(k){ return encodeURIComponent(k) + '=' + encodeURIComponent(data[k]) }
+          ).join('&');
+
+      var xhr = window.XMLHttpRequest ? new XMLHttpRequest() : new ActiveXObject("Microsoft.XMLHTTP");
+      
+      xhr.open('POST', url);
+      xhr.onreadystatechange = function() {
+          if (xhr.readyState > 3 && xhr.status == 200) { success(xhr.responseText); }
+      };
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(params);
+
+      return xhr;
+  }
+
+  // Product
+  var ympData = '';
+
+  if (window.$ || window.jQuery) {
+
+      var checkoutButtons = $('.btn-checkout');
+      checkoutButtons.each(function () {
+          var t = $(this);
+
+          if (t.attr('onclick') == "window.location='/checkout'") {
+              t.attr('onclick', "window.location='/cart'");
+          }
+      });
+
+      if (currentPage == 'product' || currentPage == 'index') {
+          var ympSelectors = $('input[name="add"] , button[name=\'add\'], #add-to-cart, .add-to-cart, #AddToCartText ,#AddToCart, .ProductForm__AddToCart');
+          ympSelectors.attr('disabled', true);
+          
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function() {
+              if (this.readyState == 4 && this.status == 200) {
+                  ympData = JSON.parse(this.response);
+                  if (ympData && ympData.data.active) {
+                      ympSelectors = $('input[name="add"] , button[name=\'add\'], #add-to-cart, .add-to-cart, #AddToCartText ,#AddToCart, .ProductForm__AddToCart');
+                      ympSelectors.addClass("ymp_mainBtn ymp_elem_0");
+                      ympSelectors.removeAttr("disabled");
+                      
+                      $('.ymp_mainBtn').on('click', function(event){
+                          event.preventDefault();
+                          var form = $(this).parents('form[action="/cart/add"]');
+                          var xhr = new XMLHttpRequest();
+                          xhr.open('POST', '/cart/add.js', true);
+                          xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                          xhr.onreadystatechange = function() {
+                              if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+                                  window.location.href = '/cart?ref=yampi_buy_button'
+                              }
+                          }
+                          
+                          xhr.send($(form).serialize());
+                      });
+                  } else {
+                      ympSelectors.removeAttr('disabled');
+                  }
+              }
+          };
+          xhttp.open('GET','https://api.dooki.com.br/v2/public/shopify/status?shop=' + window.location.host);
+          xhttp.send();
+      }
+  }
+
+  function fakeClick(event) {
+      event.preventDefault();
+
+      showYampiLoader();
+
+      getAjax('/cart.json', function (response) {
+          var cartPayload = JSON.parse(response);
+
+          var data = {
+              shop: window.location.host,
+              cart_payload: cartPayload
+          };
+
+          postAjax(cartEndpoint, JSON.stringify(data), function (response) {
+              var resp = JSON.parse(response);
+
+              window.location.href = resp.checkout_direct_url;
+          });
+      });
+  }
+
+  function yampiClick() {
+
+      showYampiLoader();
+
+      getAjax('/cart.json', function (response) {
+          var cartPayload = JSON.parse(response);
+
+          var data = {
+              shop: window.location.host,
+              cart_payload: cartPayload
+          };
+
+          postAjax(cartEndpoint, JSON.stringify(data), function (response) {
+              var resp = JSON.parse(response);
+
+              window.location.href = resp.checkout_direct_url;
+          });
+      });
+  }
+
+  // Verifica se existem botões redirecionando para /a/checkout
+  if (window.$ || window.jQuery) {
+      var oldLinks = $('a[href="/a/checkout"]').not('.yampi-btn-finalize').addClass('yampi-btn-finalize-single');
+
+      $('.yampi-btn-finalize-single').on('click', function (e) {
+          e.preventDefault();
+
+          if (currentPage == 'cart') {
+              window.location.href = window.yampiCheckoutUrl;
+          } else {
+              window.location = '/cart';
+          }
+
+      });
+  }
+  
+</script>
+
+
+<section data-section-id="cart-template" data-section-type="cart" data-section-settings="{
+  &quot;showShippingEstimator&quot;: true
+}" data-item-count="1"><form method="post" action="/cart" novalidate="novalidate" data-item-count="1" id="ymp-CrtpageMainFrm" class="ymp-CrtpageMainFrm">
+      <input type="hidden" name="attributes[collection_products_per_page]" value="">
+      <input type="hidden" name="attributes[collection_layout]" value="">
+
+      <div class="container">
+        <header class="page__header page__header--stack">
+          <h1 class="page__title heading h1">Meu carrinho</h1><button type="submit" name="checkout" class="page__button-action button button--primary button--full button--large hidden-tablet-and-up">Checkout</button><button type="submit" class="page__button-action button button--primary button--full button--large hidden-tablet-and-up ymp_check_mainBtn ymp_elem_mainBtn" id="ympBtn">Checkout</button>
+        </header>
+      </div>
+    </form>
+
+    <div class="cart-wrapper" style="min-height: 301px;">
+      <div class="cart-wrapper__inner">
+        <div class="cart-wrapper__inner-inner">
+          <div class="container container--flush"><div class="card">
+              <div class="table-wrapper">
+                <table class="line-item-table table table--loose">
+                  <thead class="hidden-phone">
+                    <tr>
+                      <th>Produto</th>
+                      <th class="table__cell--center">Quantidade</th>
+                      <th class="table__cell--right">Total</th>
+                    </tr>
+                  </thead>
+
+                  <tbody><tr class="line-item line-item--stack">
+                        <td class="line-item__product-info">
+                          <div class="line-item__product-info-wrapper">
+                            <div class="line-item__image-wrapper"><div class="aspect-ratio" style="padding-bottom: 100.0%">
+                                  <img src="//cdn.shopify.com/s/files/1/0563/9435/0800/products/H0066f5d2284545cf901c6037c54001abN_180x.jpg?v=1619054757" alt="Anti-Stress Magnetic Rings Fidget Unzip Toy Magic RingTools Children Magnetic Ring Finger Spinner Ring Adult Decompression Toys">
+                                </div></div>
+
+                            <div class="line-item__meta"><a href="/products/anti-stress-magnetic-rings-fidget-unzip-toy-magic-ringtools-children-magnetic-ring-finger-spinner-ring-adult-decompression-toys?variant=39445525987536" class="line-item__title link text--strong">Anti-Stress Magnetic Rings Fidget Unzip Toy Magic RingTools Children Magnetic Ring Finger Spinner Ring Adult Decompression Toys - Style 6</a><div class="line-item__price-list"><span class="line-item__price">R$ 2,47</span></div><div class="line-item__quantity hidden-tablet-and-up"><div class="quantity-selector"><button type="button" class="quantity-selector__button" data-action="decrease-quantity" data-href="/cart/change?quantity=0&amp;id=39445525987536:f7213821c58959b8821ca654c989e44f" data-quantity="0" data-line-id="39445525987536:f7213821c58959b8821ca654c989e44f" aria-label="Diminuir quantidade em 1" title="Diminuir quantidade em 1"><svg class="icon icon--minus" viewBox="0 0 10 2" role="presentation">
+      <path d="M10 0v2H0V0z" fill="currentColor"></path>
+    </svg></button>
+                                    <input aria-label="Quantidade" class="quantity-selector__value" pattern="[0-9]*" data-current-value="1" data-line-id="39445525987536:f7213821c58959b8821ca654c989e44f" value="1" size="2">
+                                    <button type="button" class="quantity-selector__button" data-action="increase-quantity" data-href="/cart/change?quantity=2&amp;id=39445525987536:f7213821c58959b8821ca654c989e44f" data-quantity="2" data-line-id="39445525987536:f7213821c58959b8821ca654c989e44f" aria-label="Aumentar quantidade em 1" title="Aumentar quantidade em 1"><svg class="icon icon--plus" viewBox="0 0 10 10" role="presentation">
+      <path d="M6 4h4v2H6v4H4V6H0V4h4V0h2v4z" fill="currentColor" fill-rule="evenodd"></path>
+    </svg></button>
+                                  </div><a href="/cart/change?quantity=0&amp;id=39445525987536:f7213821c58959b8821ca654c989e44f" data-action="decrease-quantity" data-quantity="0" data-line-id="39445525987536:f7213821c58959b8821ca654c989e44f" class="line-item__quantity-remove link">Remover</a>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td class="line-item__quantity table__cell--center hidden-phone"><div class="quantity-selector"><button type="button" class="quantity-selector__button" data-action="decrease-quantity" data-href="/cart/change?quantity=0&amp;id=39445525987536:f7213821c58959b8821ca654c989e44f" data-quantity="0" data-line-id="39445525987536:f7213821c58959b8821ca654c989e44f" aria-label="Diminuir quantidade em 1" title="Diminuir quantidade em 1"><svg class="icon icon--minus" viewBox="0 0 10 2" role="presentation">
+      <path d="M10 0v2H0V0z" fill="currentColor"></path>
+    </svg></button>
+                              <input aria-label="Quantidade" class="quantity-selector__value" pattern="[0-9]*" data-current-value="1" data-line-id="39445525987536:f7213821c58959b8821ca654c989e44f" value="1" size="2">
+                              <button type="button" class="quantity-selector__button" data-action="increase-quantity" data-href="/cart/change?quantity=2&amp;id=39445525987536:f7213821c58959b8821ca654c989e44f" data-quantity="2" data-line-id="39445525987536:f7213821c58959b8821ca654c989e44f" aria-label="Aumentar quantidade em 1" title="Aumentar quantidade em 1"><svg class="icon icon--plus" viewBox="0 0 10 10" role="presentation">
+      <path d="M6 4h4v2H6v4H4V6H0V4h4V0h2v4z" fill="currentColor" fill-rule="evenodd"></path>
+    </svg></button>
+                            </div><a href="/cart/change?quantity=0&amp;id=39445525987536:f7213821c58959b8821ca654c989e44f" data-action="decrease-quantity" data-quantity="0" data-line-id="39445525987536:f7213821c58959b8821ca654c989e44f" class="line-item__quantity-remove link">Remover</a>
+                        </td>
+
+                        <td class="line-item__line-price table__cell--right hidden-phone"><span>R$ 2,47</span></td>
+                      </tr></tbody>
+                </table>
+              </div>
+            </div><div class="card">
+                <div class="estimate-shipping">
+                  <button type="button" class="estimate-shipping__toggle" data-action="toggle-collapsible" data-collapsible-force-overflow="" aria-expanded="false" aria-controls="shipping-estimator">
+                    <span class="estimate-shipping__icon"><svg viewBox="0 0 24 22" role="presentation">
+      <g transform="translate(1 1)" stroke-width="2" fill="none" fill-rule="evenodd">
+        <path d="M5 10H2M5 15H4" stroke="#00badb" stroke-linecap="square"></path>
+        <path stroke="#190c80" d="M16.829 16H22v-6l-4-2-1-4H9v12h2.171"></path>
+        <path d="M0 5h5" stroke="#00badb" stroke-linecap="square"></path>
+        <path stroke="#190c80" stroke-linecap="square" d="M0 0h9v4"></path>
+        <circle stroke="#190c80" stroke-linecap="square" cx="14" cy="17" r="3"></circle>
+        <path stroke="#190c80" stroke-linecap="square" d="M13 7v2h2"></path>
+      </g>
+    </svg></span>
+                    <span class="estimate-shipping__text">Estimar frete</span>
+                    <span class="estimate-shipping__arrow"><svg class="icon icon--arrow-bottom" viewBox="0 0 12 8" role="presentation">
+      <path stroke="currentColor" stroke-width="2" d="M10 2L6 6 2 2" fill="none" stroke-linecap="square"></path>
+    </svg></span>
+                  </button>
+
+                  <div id="shipping-estimator" class="estimate-shipping__collapsible collapsible">
+                    <div class="shipping-estimator form">
+                      <div class="form__input-row">
+                        <div class="form__input-wrapper">
+                          <label for="shipping-estimator-country" class="form__label form__label--light">País</label>
+
+                          <div class="select-wrapper select-wrapper--primary"><svg class="icon icon--arrow-bottom" viewBox="0 0 12 8" role="presentation">
+      <path stroke="currentColor" stroke-width="2" d="M10 2L6 6 2 2" fill="none" stroke-linecap="square"></path>
+    </svg><select name="country" id="shipping-estimator-country" data-default="United States" required=""><option value="---" data-provinces="[]">---</option>
+<option value="Afghanistan" data-provinces="[]">Afeganistão</option>
+<option value="South Africa" data-provinces="[[&quot;Eastern Cape&quot;,&quot;Cabo Oriental&quot;],[&quot;Free State&quot;,&quot;Estado Livre&quot;],[&quot;Gauteng&quot;,&quot;Gauteng&quot;],[&quot;KwaZulu-Natal&quot;,&quot;KwaZulu-Natal&quot;],[&quot;Limpopo&quot;,&quot;Limpopo&quot;],[&quot;Mpumalanga&quot;,&quot;Mpumalanga&quot;],[&quot;North West&quot;,&quot;Noroeste&quot;],[&quot;Northern Cape&quot;,&quot;Cabo Setentrional&quot;],[&quot;Western Cape&quot;,&quot;Cabo Ocidental&quot;]]">África do Sul</option>
+<option value="Albania" data-provinces="[]">Albânia</option>
+<option value="Germany" data-provinces="[]">Alemanha</option>
+<option value="Andorra" data-provinces="[]">Andorra</option>
+<option value="Angola" data-provinces="[]">Angola</option>
+<option value="Anguilla" data-provinces="[]">Anguila</option>
+<option value="Antigua And Barbuda" data-provinces="[]">Antígua e Barbuda</option>
+<option value="Saudi Arabia" data-provinces="[]">Arábia Saudita</option>
+<option value="Algeria" data-provinces="[]">Argélia</option>
+<option value="Argentina" data-provinces="[[&quot;Buenos Aires&quot;,&quot;Buenos Aires&quot;],[&quot;Catamarca&quot;,&quot;Catamarca&quot;],[&quot;Chaco&quot;,&quot;Chaco&quot;],[&quot;Chubut&quot;,&quot;Chubut&quot;],[&quot;Ciudad Autónoma de Buenos Aires&quot;,&quot;Cidade Autônoma de Buenos Aires&quot;],[&quot;Corrientes&quot;,&quot;Corrientes&quot;],[&quot;Córdoba&quot;,&quot;Córdova (província da Argentina)&quot;],[&quot;Entre Ríos&quot;,&quot;Entre Ríos&quot;],[&quot;Formosa&quot;,&quot;Formosa&quot;],[&quot;Jujuy&quot;,&quot;Jujuy&quot;],[&quot;La Pampa&quot;,&quot;La Pampa&quot;],[&quot;La Rioja&quot;,&quot;Rioja&quot;],[&quot;Mendoza&quot;,&quot;Mendoza (província)&quot;],[&quot;Misiones&quot;,&quot;Misiones&quot;],[&quot;Neuquén&quot;,&quot;Neuquén&quot;],[&quot;Río Negro&quot;,&quot;Río Negro&quot;],[&quot;Salta&quot;,&quot;Salta&quot;],[&quot;San Juan&quot;,&quot;San Juan&quot;],[&quot;San Luis&quot;,&quot;San Luis&quot;],[&quot;Santa Cruz&quot;,&quot;Santa Cruz&quot;],[&quot;Santa Fe&quot;,&quot;Santa Fé&quot;],[&quot;Santiago Del Estero&quot;,&quot;Santiago del Estero&quot;],[&quot;Tierra Del Fuego&quot;,&quot;Terra do Fogo, Antártica e Ilhas do Atlântico Sul&quot;],[&quot;Tucumán&quot;,&quot;Tucumán&quot;]]">Argentina</option>
+<option value="Armenia" data-provinces="[]">Armênia</option>
+<option value="Aruba" data-provinces="[]">Aruba</option>
+<option value="Australia" data-provinces="[[&quot;Australian Capital Territory&quot;,&quot;Território da Capital Australiana&quot;],[&quot;New South Wales&quot;,&quot;Nova Gales do Sul&quot;],[&quot;Northern Territory&quot;,&quot;Território do Norte&quot;],[&quot;Queensland&quot;,&quot;Queensland&quot;],[&quot;South Australia&quot;,&quot;Austrália Meridional&quot;],[&quot;Tasmania&quot;,&quot;Tasmânia&quot;],[&quot;Victoria&quot;,&quot;Vitória&quot;],[&quot;Western Australia&quot;,&quot;Austrália Ocidental&quot;]]">Austrália</option>
+<option value="Austria" data-provinces="[]">Áustria</option>
+<option value="Azerbaijan" data-provinces="[]">Azerbaijão</option>
+<option value="Bahamas" data-provinces="[]">Bahamas</option>
+<option value="Bahrain" data-provinces="[]">Bahrein</option>
+<option value="Bangladesh" data-provinces="[]">Bangladesh</option>
+<option value="Barbados" data-provinces="[]">Barbados</option>
+<option value="Belgium" data-provinces="[]">Bélgica</option>
+<option value="Belize" data-provinces="[]">Belize</option>
+<option value="Benin" data-provinces="[]">Benin</option>
+<option value="Bermuda" data-provinces="[]">Bermudas</option>
+<option value="Belarus" data-provinces="[]">Bielorrússia</option>
+<option value="Bolivia" data-provinces="[]">Bolívia</option>
+<option value="Bosnia And Herzegovina" data-provinces="[]">Bósnia e Herzegovina</option>
+<option value="Botswana" data-provinces="[]">Botsuana</option>
+<option value="Brazil" data-provinces="[[&quot;Acre&quot;,&quot;Acre&quot;],[&quot;Alagoas&quot;,&quot;Alagoas&quot;],[&quot;Amapá&quot;,&quot;Amapá&quot;],[&quot;Amazonas&quot;,&quot;Amazonas&quot;],[&quot;Bahia&quot;,&quot;Bahia&quot;],[&quot;Ceará&quot;,&quot;Ceará&quot;],[&quot;Distrito Federal&quot;,&quot;Distrito Federal&quot;],[&quot;Espírito Santo&quot;,&quot;Espírito Santo&quot;],[&quot;Goiás&quot;,&quot;Goiás&quot;],[&quot;Maranhão&quot;,&quot;Maranhão&quot;],[&quot;Mato Grosso&quot;,&quot;Mato Grosso&quot;],[&quot;Mato Grosso do Sul&quot;,&quot;Mato Grosso do Sul&quot;],[&quot;Minas Gerais&quot;,&quot;Minas Gerais&quot;],[&quot;Paraná&quot;,&quot;Paraná&quot;],[&quot;Paraíba&quot;,&quot;Paraíba&quot;],[&quot;Pará&quot;,&quot;Pará&quot;],[&quot;Pernambuco&quot;,&quot;Pernambuco&quot;],[&quot;Piauí&quot;,&quot;Piauí&quot;],[&quot;Rio Grande do Norte&quot;,&quot;Rio Grande do Norte&quot;],[&quot;Rio Grande do Sul&quot;,&quot;Rio Grande do Sul&quot;],[&quot;Rio de Janeiro&quot;,&quot;Rio de Janeiro&quot;],[&quot;Rondônia&quot;,&quot;Rondônia&quot;],[&quot;Roraima&quot;,&quot;Roraima&quot;],[&quot;Santa Catarina&quot;,&quot;Santa Catarina&quot;],[&quot;Sergipe&quot;,&quot;Sergipe&quot;],[&quot;São Paulo&quot;,&quot;São Paulo&quot;],[&quot;Tocantins&quot;,&quot;Tocantins&quot;]]">Brasil</option>
+<option value="Brunei" data-provinces="[]">Brunei</option>
+<option value="Bulgaria" data-provinces="[]">Bulgária</option>
+<option value="Burkina Faso" data-provinces="[]">Burquina Faso</option>
+<option value="Burundi" data-provinces="[]">Burundi</option>
+<option value="Bhutan" data-provinces="[]">Butão</option>
+<option value="Cape Verde" data-provinces="[]">Cabo Verde</option>
+<option value="Republic of Cameroon" data-provinces="[]">Camarões</option>
+<option value="Cambodia" data-provinces="[]">Camboja</option>
+<option value="Canada" data-provinces="[[&quot;Alberta&quot;,&quot;Alberta&quot;],[&quot;British Columbia&quot;,&quot;Colúmbia Britânica&quot;],[&quot;Manitoba&quot;,&quot;Manitoba&quot;],[&quot;New Brunswick&quot;,&quot;Nova Brunswick&quot;],[&quot;Newfoundland and Labrador&quot;,&quot;Terra Nova e Labrador&quot;],[&quot;Northwest Territories&quot;,&quot;Territórios do Noroeste&quot;],[&quot;Nova Scotia&quot;,&quot;Nova Escócia&quot;],[&quot;Nunavut&quot;,&quot;Nunavut&quot;],[&quot;Ontario&quot;,&quot;Ontário&quot;],[&quot;Prince Edward Island&quot;,&quot;Ilha do Príncipe Eduardo&quot;],[&quot;Quebec&quot;,&quot;Quebec&quot;],[&quot;Saskatchewan&quot;,&quot;Saskatchewan&quot;],[&quot;Yukon&quot;,&quot;Yukon&quot;]]">Canadá</option>
+<option value="Qatar" data-provinces="[]">Catar</option>
+<option value="Kazakhstan" data-provinces="[]">Cazaquistão</option>
+<option value="Chad" data-provinces="[]">Chade</option>
+<option value="Chile" data-provinces="[[&quot;Antofagasta&quot;,&quot;Região de Antofagasta&quot;],[&quot;Araucanía&quot;,&quot;Região da Araucanía&quot;],[&quot;Arica and Parinacota&quot;,&quot;Região de Arica e Parinacota&quot;],[&quot;Atacama&quot;,&quot;Região de Atacama&quot;],[&quot;Aysén&quot;,&quot;Aisén (região)&quot;],[&quot;Biobío&quot;,&quot;Região de Bío-Bío&quot;],[&quot;Coquimbo&quot;,&quot;Região de Coquimbo&quot;],[&quot;Los Lagos&quot;,&quot;Região de Los Lagos&quot;],[&quot;Los Ríos&quot;,&quot;Região de Los Rios&quot;],[&quot;Magallanes&quot;,&quot;Magalhães e Antártica Chilena&quot;],[&quot;Maule&quot;,&quot;Região de Maule&quot;],[&quot;O'Higgins&quot;,&quot;Região de O’Higgins&quot;],[&quot;Santiago&quot;,&quot;Região Metropolitana de Santiago&quot;],[&quot;Tarapacá&quot;,&quot;Região de Tarapacá&quot;],[&quot;Valparaíso&quot;,&quot;Região de Valparaíso&quot;],[&quot;Ñuble&quot;,&quot;Ñuble&quot;]]">Chile</option>
+<option value="China" data-provinces="[[&quot;Anhui&quot;,&quot;Anhui&quot;],[&quot;Beijing&quot;,&quot;Pequim&quot;],[&quot;Chongqing&quot;,&quot;Chongqing&quot;],[&quot;Fujian&quot;,&quot;Fujian&quot;],[&quot;Gansu&quot;,&quot;Gansu&quot;],[&quot;Guangdong&quot;,&quot;Guangdong&quot;],[&quot;Guangxi&quot;,&quot;Guangxi&quot;],[&quot;Guizhou&quot;,&quot;Guizhou&quot;],[&quot;Hainan&quot;,&quot;Hainan&quot;],[&quot;Hebei&quot;,&quot;Hebei&quot;],[&quot;Heilongjiang&quot;,&quot;Heilongjiang&quot;],[&quot;Henan&quot;,&quot;Henan&quot;],[&quot;Hubei&quot;,&quot;Hubei&quot;],[&quot;Hunan&quot;,&quot;Hunan&quot;],[&quot;Inner Mongolia&quot;,&quot;Mongólia Interior&quot;],[&quot;Jiangsu&quot;,&quot;Jiangsu&quot;],[&quot;Jiangxi&quot;,&quot;Jiangxi&quot;],[&quot;Jilin&quot;,&quot;Jilin&quot;],[&quot;Liaoning&quot;,&quot;Liaoning&quot;],[&quot;Ningxia&quot;,&quot;Ningxia&quot;],[&quot;Qinghai&quot;,&quot;Qinghai&quot;],[&quot;Shaanxi&quot;,&quot;Shaanxi&quot;],[&quot;Shandong&quot;,&quot;Shandong&quot;],[&quot;Shanghai&quot;,&quot;Xangai&quot;],[&quot;Shanxi&quot;,&quot;Shanxi&quot;],[&quot;Sichuan&quot;,&quot;Sichuan&quot;],[&quot;Tianjin&quot;,&quot;Tianjin&quot;],[&quot;Xinjiang&quot;,&quot;Xinjiang&quot;],[&quot;Xizang&quot;,&quot;Região Autônoma do Tibete&quot;],[&quot;Yunnan&quot;,&quot;Yunnan&quot;],[&quot;Zhejiang&quot;,&quot;Zhejiang&quot;]]">China</option>
+<option value="Cyprus" data-provinces="[]">Chipre</option>
+<option value="Holy See (Vatican City State)" data-provinces="[]">Cidade do Vaticano</option>
+<option value="Colombia" data-provinces="[[&quot;Amazonas&quot;,&quot;Amazonas&quot;],[&quot;Antioquia&quot;,&quot;Antioquia&quot;],[&quot;Arauca&quot;,&quot;Arauca&quot;],[&quot;Atlántico&quot;,&quot;Atlántico&quot;],[&quot;Bogotá, D.C.&quot;,&quot;Bogotá, DC&quot;],[&quot;Bolívar&quot;,&quot;Bolívar&quot;],[&quot;Boyacá&quot;,&quot;Boyacá&quot;],[&quot;Caldas&quot;,&quot;Caldas&quot;],[&quot;Caquetá&quot;,&quot;Caquetá&quot;],[&quot;Casanare&quot;,&quot;Casanare&quot;],[&quot;Cauca&quot;,&quot;Cauca&quot;],[&quot;Cesar&quot;,&quot;Cesar&quot;],[&quot;Chocó&quot;,&quot;Chocó&quot;],[&quot;Cundinamarca&quot;,&quot;Cundinamarca&quot;],[&quot;Córdoba&quot;,&quot;Córdoba&quot;],[&quot;Guainía&quot;,&quot;Guainía&quot;],[&quot;Guaviare&quot;,&quot;Guaviare&quot;],[&quot;Huila&quot;,&quot;Huila&quot;],[&quot;La Guajira&quot;,&quot;Guajira&quot;],[&quot;Magdalena&quot;,&quot;Magdalena&quot;],[&quot;Meta&quot;,&quot;Meta&quot;],[&quot;Nariño&quot;,&quot;Nariño&quot;],[&quot;Norte de Santander&quot;,&quot;Norte de Santander&quot;],[&quot;Putumayo&quot;,&quot;Putumayo&quot;],[&quot;Quindío&quot;,&quot;Quindío&quot;],[&quot;Risaralda&quot;,&quot;Risaralda&quot;],[&quot;San Andrés, Providencia y Santa Catalina&quot;,&quot;Santo André, Providência e Santa Catarina&quot;],[&quot;Santander&quot;,&quot;Santander&quot;],[&quot;Sucre&quot;,&quot;Sucre&quot;],[&quot;Tolima&quot;,&quot;Tolima&quot;],[&quot;Valle del Cauca&quot;,&quot;Valle del Cauca&quot;],[&quot;Vaupés&quot;,&quot;Vaupés&quot;],[&quot;Vichada&quot;,&quot;Vichada&quot;]]">Colômbia</option>
+<option value="Comoros" data-provinces="[]">Comores</option>
+<option value="Congo, The Democratic Republic Of The" data-provinces="[]">Congo - Kinshasa</option>
+<option value="South Korea" data-provinces="[[&quot;Busan&quot;,&quot;Busan&quot;],[&quot;Chungbuk&quot;,&quot;Chungcheong do Norte&quot;],[&quot;Chungnam&quot;,&quot;Chungcheong do Sul&quot;],[&quot;Daegu&quot;,&quot;Daegu&quot;],[&quot;Daejeon&quot;,&quot;Daejeon&quot;],[&quot;Gangwon&quot;,&quot;Gangwon&quot;],[&quot;Gwangju&quot;,&quot;Gwangju&quot;],[&quot;Gyeongbuk&quot;,&quot;Gyeongsang do Norte&quot;],[&quot;Gyeonggi&quot;,&quot;Gyeonggi&quot;],[&quot;Gyeongnam&quot;,&quot;Gyeongsang do Sul&quot;],[&quot;Incheon&quot;,&quot;Incheon&quot;],[&quot;Jeju&quot;,&quot;Jeju&quot;],[&quot;Jeonbuk&quot;,&quot;Jeolla do Norte&quot;],[&quot;Jeonnam&quot;,&quot;Jeolla do Sul&quot;],[&quot;Sejong&quot;,&quot;Cidade de Sejong&quot;],[&quot;Seoul&quot;,&quot;Seul&quot;],[&quot;Ulsan&quot;,&quot;Ulsan&quot;]]">Coreia do Sul</option>
+<option value="Costa Rica" data-provinces="[]">Costa Rica</option>
+<option value="Côte d'Ivoire" data-provinces="[]">Costa do Marfim</option>
+<option value="Croatia" data-provinces="[]">Croácia</option>
+<option value="Curaçao" data-provinces="[]">Curaçao</option>
+<option value="Denmark" data-provinces="[]">Dinamarca</option>
+<option value="Djibouti" data-provinces="[]">Djibuti</option>
+<option value="Dominica" data-provinces="[]">Dominica</option>
+<option value="Egypt" data-provinces="[[&quot;6th of October&quot;,&quot;6 de outubro&quot;],[&quot;Al Sharqia&quot;,&quot;Xarqia&quot;],[&quot;Alexandria&quot;,&quot;Alexandria (província egípcia)&quot;],[&quot;Aswan&quot;,&quot;Assuão&quot;],[&quot;Asyut&quot;,&quot;Assiut&quot;],[&quot;Beheira&quot;,&quot;Al-Buhaira&quot;],[&quot;Beni Suef&quot;,&quot;Beni Suef&quot;],[&quot;Cairo&quot;,&quot;Cairo&quot;],[&quot;Dakahlia&quot;,&quot;Dakahlia&quot;],[&quot;Damietta&quot;,&quot;Damieta&quot;],[&quot;Faiyum&quot;,&quot;Faium&quot;],[&quot;Gharbia&quot;,&quot;Garbia&quot;],[&quot;Giza&quot;,&quot;Guizé&quot;],[&quot;Helwan&quot;,&quot;Helwan&quot;],[&quot;Ismailia&quot;,&quot;Ismaília&quot;],[&quot;Kafr el-Sheikh&quot;,&quot;Kafr el-Sheikh&quot;],[&quot;Luxor&quot;,&quot;Luxor&quot;],[&quot;Matrouh&quot;,&quot;Matruh&quot;],[&quot;Minya&quot;,&quot;Minya&quot;],[&quot;Monufia&quot;,&quot;Monufia&quot;],[&quot;New Valley&quot;,&quot;Vale Novo&quot;],[&quot;North Sinai&quot;,&quot;Sinai do Norte&quot;],[&quot;Port Said&quot;,&quot;Governamento de Porto Said&quot;],[&quot;Qalyubia&quot;,&quot;Qaliubia&quot;],[&quot;Qena&quot;,&quot;Qina&quot;],[&quot;Red Sea&quot;,&quot;Mar Vermelho&quot;],[&quot;Sohag&quot;,&quot;Sohag&quot;],[&quot;South Sinai&quot;,&quot;Sinai do Sul&quot;],[&quot;Suez&quot;,&quot;Suez&quot;]]">Egito</option>
+<option value="El Salvador" data-provinces="[]">El Salvador</option>
+<option value="United Arab Emirates" data-provinces="[[&quot;Abu Dhabi&quot;,&quot;Emirados Abu Dhabi&quot;],[&quot;Ajman&quot;,&quot;Ajman&quot;],[&quot;Dubai&quot;,&quot;Dubai&quot;],[&quot;Fujairah&quot;,&quot;Al Fujayrah&quot;],[&quot;Ras al-Khaimah&quot;,&quot;Ras al-Khaimah&quot;],[&quot;Sharjah&quot;,&quot;Sharjah&quot;],[&quot;Umm al-Quwain&quot;,&quot;Umm al Qaywayn&quot;]]">Emirados Árabes Unidos</option>
+<option value="Ecuador" data-provinces="[]">Equador</option>
+<option value="Eritrea" data-provinces="[]">Eritreia</option>
+<option value="Slovakia" data-provinces="[]">Eslováquia</option>
+<option value="Slovenia" data-provinces="[]">Eslovênia</option>
+<option value="Spain" data-provinces="[[&quot;A Coruña&quot;,&quot;Corunha&quot;],[&quot;Albacete&quot;,&quot;Albacete&quot;],[&quot;Alicante&quot;,&quot;Alicante&quot;],[&quot;Almería&quot;,&quot;Almeria&quot;],[&quot;Asturias&quot;,&quot;Asturias&quot;],[&quot;Badajoz&quot;,&quot;Badajoz (província)&quot;],[&quot;Balears&quot;,&quot;Baleares²&quot;],[&quot;Barcelona&quot;,&quot;Barcelona&quot;],[&quot;Burgos&quot;,&quot;Burgos&quot;],[&quot;Cantabria&quot;,&quot;Cantábria²&quot;],[&quot;Castellón&quot;,&quot;Castellón&quot;],[&quot;Ceuta&quot;,&quot;Ceuta&quot;],[&quot;Ciudad Real&quot;,&quot;Cidade Real&quot;],[&quot;Cuenca&quot;,&quot;Cuenca&quot;],[&quot;Cáceres&quot;,&quot;Cáceres (província)&quot;],[&quot;Cádiz&quot;,&quot;Cádis&quot;],[&quot;Córdoba&quot;,&quot;Córdova (província da Espanha)&quot;],[&quot;Girona&quot;,&quot;Girona&quot;],[&quot;Granada&quot;,&quot;Granada&quot;],[&quot;Guadalajara&quot;,&quot;Guadalajara&quot;],[&quot;Guipúzcoa&quot;,&quot;Guipúscoa&quot;],[&quot;Huelva&quot;,&quot;Província de Huelva&quot;],[&quot;Huesca&quot;,&quot;Huesca&quot;],[&quot;Jaén&quot;,&quot;Jaén&quot;],[&quot;La Rioja&quot;,&quot;La Rioja&quot;],[&quot;Las Palmas&quot;,&quot;Las Palmas&quot;],[&quot;León&quot;,&quot;Leão&quot;],[&quot;Lleida&quot;,&quot;Província de Lérida&quot;],[&quot;Lugo&quot;,&quot;Lugo&quot;],[&quot;Madrid&quot;,&quot;Madrid&quot;],[&quot;Melilla&quot;,&quot;Melilla&quot;],[&quot;Murcia&quot;,&quot;Murcia&quot;],[&quot;Málaga&quot;,&quot;Málaga&quot;],[&quot;Navarra&quot;,&quot;Navarra²&quot;],[&quot;Ourense&quot;,&quot;Ourense&quot;],[&quot;Palencia&quot;,&quot;Palência&quot;],[&quot;Pontevedra&quot;,&quot;Pontevedra&quot;],[&quot;Salamanca&quot;,&quot;Salamanca&quot;],[&quot;Santa Cruz de Tenerife&quot;,&quot;Santa Cruz de Tenerife&quot;],[&quot;Segovia&quot;,&quot;Segóvia&quot;],[&quot;Sevilla&quot;,&quot;Província de Sevilha&quot;],[&quot;Soria&quot;,&quot;Sória&quot;],[&quot;Tarragona&quot;,&quot;Tarragona&quot;],[&quot;Teruel&quot;,&quot;Teruel (província)&quot;],[&quot;Toledo&quot;,&quot;Toledo&quot;],[&quot;Valencia&quot;,&quot;Valência (província)&quot;],[&quot;Valladolid&quot;,&quot;Valhadolide&quot;],[&quot;Vizcaya&quot;,&quot;Biscaia&quot;],[&quot;Zamora&quot;,&quot;Zamora&quot;],[&quot;Zaragoza&quot;,&quot;Saragoça&quot;],[&quot;Álava&quot;,&quot;Álava&quot;],[&quot;Ávila&quot;,&quot;Ávila&quot;]]">Espanha</option>
+<option value="Eswatini" data-provinces="[]">Essuatíni</option>
+<option value="United States" data-provinces="[[&quot;Alabama&quot;,&quot;Alabama&quot;],[&quot;Alaska&quot;,&quot;Alasca&quot;],[&quot;American Samoa&quot;,&quot;Samoa Americana&quot;],[&quot;Arizona&quot;,&quot;Arizona&quot;],[&quot;Arkansas&quot;,&quot;Arkansas&quot;],[&quot;Armed Forces Americas&quot;,&quot;Forças Armadas das Américas&quot;],[&quot;Armed Forces Europe&quot;,&quot;Forças Armadas da Europa&quot;],[&quot;Armed Forces Pacific&quot;,&quot;Forças Armadas do Pacífico&quot;],[&quot;California&quot;,&quot;Califórnia&quot;],[&quot;Colorado&quot;,&quot;Colorado&quot;],[&quot;Connecticut&quot;,&quot;Connecticut&quot;],[&quot;Delaware&quot;,&quot;Delaware&quot;],[&quot;District of Columbia&quot;,&quot;Washington&quot;],[&quot;Federated States of Micronesia&quot;,&quot;Micronésia&quot;],[&quot;Florida&quot;,&quot;Flórida&quot;],[&quot;Georgia&quot;,&quot;Geórgia&quot;],[&quot;Guam&quot;,&quot;Guam&quot;],[&quot;Hawaii&quot;,&quot;Havaí&quot;],[&quot;Idaho&quot;,&quot;Idaho&quot;],[&quot;Illinois&quot;,&quot;Illinois&quot;],[&quot;Indiana&quot;,&quot;Indiana&quot;],[&quot;Iowa&quot;,&quot;Iowa&quot;],[&quot;Kansas&quot;,&quot;Kansas&quot;],[&quot;Kentucky&quot;,&quot;Kentucky&quot;],[&quot;Louisiana&quot;,&quot;Luisiana&quot;],[&quot;Maine&quot;,&quot;Maine&quot;],[&quot;Marshall Islands&quot;,&quot;Ilhas Marshall&quot;],[&quot;Maryland&quot;,&quot;Maryland&quot;],[&quot;Massachusetts&quot;,&quot;Massachusetts&quot;],[&quot;Michigan&quot;,&quot;Michigan&quot;],[&quot;Minnesota&quot;,&quot;Minnesota&quot;],[&quot;Mississippi&quot;,&quot;Mississippi&quot;],[&quot;Missouri&quot;,&quot;Missouri&quot;],[&quot;Montana&quot;,&quot;Montana&quot;],[&quot;Nebraska&quot;,&quot;Nebraska&quot;],[&quot;Nevada&quot;,&quot;Nevada&quot;],[&quot;New Hampshire&quot;,&quot;Nova Hampshire&quot;],[&quot;New Jersey&quot;,&quot;Nova Jérsia&quot;],[&quot;New Mexico&quot;,&quot;Novo México&quot;],[&quot;New York&quot;,&quot;Nova Iorque&quot;],[&quot;North Carolina&quot;,&quot;Carolina do Norte&quot;],[&quot;North Dakota&quot;,&quot;Dakota do Norte&quot;],[&quot;Northern Mariana Islands&quot;,&quot;Ilhas Marianas do Norte&quot;],[&quot;Ohio&quot;,&quot;Ohio&quot;],[&quot;Oklahoma&quot;,&quot;Oklahoma&quot;],[&quot;Oregon&quot;,&quot;Oregon&quot;],[&quot;Palau&quot;,&quot;Palau&quot;],[&quot;Pennsylvania&quot;,&quot;Pensilvânia&quot;],[&quot;Puerto Rico&quot;,&quot;Porto Rico&quot;],[&quot;Rhode Island&quot;,&quot;Rhode Island&quot;],[&quot;South Carolina&quot;,&quot;Carolina do Sul&quot;],[&quot;South Dakota&quot;,&quot;Dakota do Sul&quot;],[&quot;Tennessee&quot;,&quot;Tennessee&quot;],[&quot;Texas&quot;,&quot;Texas&quot;],[&quot;Utah&quot;,&quot;Utah&quot;],[&quot;Vermont&quot;,&quot;Vermont&quot;],[&quot;Virgin Islands&quot;,&quot;Ilhas Virgens Americanas&quot;],[&quot;Virginia&quot;,&quot;Virgínia&quot;],[&quot;Washington&quot;,&quot;Washington²&quot;],[&quot;West Virginia&quot;,&quot;Virgínia Ocidental&quot;],[&quot;Wisconsin&quot;,&quot;Wisconsin&quot;],[&quot;Wyoming&quot;,&quot;Wyoming&quot;]]">Estados Unidos</option>
+<option value="Estonia" data-provinces="[]">Estônia</option>
+<option value="Ethiopia" data-provinces="[]">Etiópia</option>
+<option value="Fiji" data-provinces="[]">Fiji</option>
+<option value="Philippines" data-provinces="[[&quot;Abra&quot;,&quot;Abra (província)&quot;],[&quot;Agusan del Norte&quot;,&quot;Agusão do Norte&quot;],[&quot;Agusan del Sur&quot;,&quot;Augusan do Sur&quot;],[&quot;Aklan&quot;,&quot;Aklan&quot;],[&quot;Albay&quot;,&quot;Albay&quot;],[&quot;Antique&quot;,&quot;Antigo&quot;],[&quot;Apayao&quot;,&quot;Apayao&quot;],[&quot;Aurora&quot;,&quot;Aurora&quot;],[&quot;Basilan&quot;,&quot;Província de Basilan&quot;],[&quot;Bataan&quot;,&quot;Bataan&quot;],[&quot;Batanes&quot;,&quot;Batanes&quot;],[&quot;Batangas&quot;,&quot;Batangas&quot;],[&quot;Benguet&quot;,&quot;Província de Benguet&quot;],[&quot;Biliran&quot;,&quot;Biliran&quot;],[&quot;Bohol&quot;,&quot;Bohol&quot;],[&quot;Bukidnon&quot;,&quot;Bukidnon&quot;],[&quot;Bulacan&quot;,&quot;Bulacão&quot;],[&quot;Cagayan&quot;,&quot;Cagayan&quot;],[&quot;Camarines Norte&quot;,&quot;Camarines Norte&quot;],[&quot;Camarines Sur&quot;,&quot;Camarines Sur&quot;],[&quot;Camiguin&quot;,&quot;Camiguin&quot;],[&quot;Capiz&quot;,&quot;Capiz&quot;],[&quot;Catanduanes&quot;,&quot;Catanduanes&quot;],[&quot;Cavite&quot;,&quot;Província de Cavite&quot;],[&quot;Cebu&quot;,&quot;Cebu&quot;],[&quot;Cotabato&quot;,&quot;Cotabato&quot;],[&quot;Davao Occidental&quot;,&quot;Davao Occidental&quot;],[&quot;Davao Oriental&quot;,&quot;Davao Oriental&quot;],[&quot;Davao de Oro&quot;,&quot;Vale de Compostela&quot;],[&quot;Davao del Norte&quot;,&quot;Davao del Norte&quot;],[&quot;Davao del Sur&quot;,&quot;Davao do Sul&quot;],[&quot;Dinagat Islands&quot;,&quot;Dinagat Islands&quot;],[&quot;Eastern Samar&quot;,&quot;Samar Oriental&quot;],[&quot;Guimaras&quot;,&quot;Guimaras&quot;],[&quot;Ifugao&quot;,&quot;Ifugão&quot;],[&quot;Ilocos Norte&quot;,&quot;Ilocos Norte&quot;],[&quot;Ilocos Sur&quot;,&quot;Ilocos Sur&quot;],[&quot;Iloilo&quot;,&quot;Iloilo&quot;],[&quot;Isabela&quot;,&quot;Isabela&quot;],[&quot;Kalinga&quot;,&quot;Província de Kalinga&quot;],[&quot;La Union&quot;,&quot;La Unión&quot;],[&quot;Laguna&quot;,&quot;Laguna&quot;],[&quot;Lanao del Norte&quot;,&quot;Lanão do Norte&quot;],[&quot;Lanao del Sur&quot;,&quot;Lanão de Sur&quot;],[&quot;Leyte&quot;,&quot;Leyte&quot;],[&quot;Maguindanao&quot;,&quot;Maguindanao&quot;],[&quot;Marinduque&quot;,&quot;Marinduque&quot;],[&quot;Masbate&quot;,&quot;Masbate&quot;],[&quot;Metro Manila&quot;,&quot;Grande Manila&quot;],[&quot;Misamis Occidental&quot;,&quot;Misamis Occidental&quot;],[&quot;Misamis Oriental&quot;,&quot;Misamis Oriental&quot;],[&quot;Mountain Province&quot;,&quot;Província Mountain&quot;],[&quot;Negros Occidental&quot;,&quot;Negros Ocidental&quot;],[&quot;Negros Oriental&quot;,&quot;Negros Oriental&quot;],[&quot;Northern Samar&quot;,&quot;Northern Samar&quot;],[&quot;Nueva Ecija&quot;,&quot;Nueva Ecija&quot;],[&quot;Nueva Vizcaya&quot;,&quot;Nova Vizcaya&quot;],[&quot;Occidental Mindoro&quot;,&quot;Mindoro Ocidental&quot;],[&quot;Oriental Mindoro&quot;,&quot;Oriental Mindoro&quot;],[&quot;Palawan&quot;,&quot;Palawan&quot;],[&quot;Pampanga&quot;,&quot;Pampanga&quot;],[&quot;Pangasinan&quot;,&quot;Pangasinán&quot;],[&quot;Quezon&quot;,&quot;Quezon&quot;],[&quot;Quirino&quot;,&quot;Quirino&quot;],[&quot;Rizal&quot;,&quot;Rizal&quot;],[&quot;Romblon&quot;,&quot;Romblon&quot;],[&quot;Samar&quot;,&quot;Samar&quot;],[&quot;Sarangani&quot;,&quot;Sarangani&quot;],[&quot;Siquijor&quot;,&quot;Siquijor&quot;],[&quot;Sorsogon&quot;,&quot;Sorsogon&quot;],[&quot;South Cotabato&quot;,&quot;Cotabato do Sul&quot;],[&quot;Southern Leyte&quot;,&quot;Southern Leyte&quot;],[&quot;Sultan Kudarat&quot;,&quot;Sultão Kudarat&quot;],[&quot;Sulu&quot;,&quot;Sulu&quot;],[&quot;Surigao del Norte&quot;,&quot;Surigão do Norte&quot;],[&quot;Surigao del Sur&quot;,&quot;Surigão do Sur&quot;],[&quot;Tarlac&quot;,&quot;Tarlac&quot;],[&quot;Tawi-Tawi&quot;,&quot;Tawi-Tawi&quot;],[&quot;Zambales&quot;,&quot;Zambales&quot;],[&quot;Zamboanga Sibugay&quot;,&quot;Zamboanga Sibugay&quot;],[&quot;Zamboanga del Norte&quot;,&quot;Zamboanga del Norte&quot;],[&quot;Zamboanga del Sur&quot;,&quot;Zamboanga del Sur&quot;]]">Filipinas</option>
+<option value="Finland" data-provinces="[]">Finlândia</option>
+<option value="France" data-provinces="[]">França</option>
+<option value="Gabon" data-provinces="[]">Gabão</option>
+<option value="Gambia" data-provinces="[]">Gâmbia</option>
+<option value="Ghana" data-provinces="[]">Gana</option>
+<option value="Georgia" data-provinces="[]">Geórgia</option>
+<option value="Gibraltar" data-provinces="[]">Gibraltar</option>
+<option value="Grenada" data-provinces="[]">Granada</option>
+<option value="Greece" data-provinces="[]">Grécia</option>
+<option value="Greenland" data-provinces="[]">Groenlândia</option>
+<option value="Guadeloupe" data-provinces="[]">Guadalupe</option>
+<option value="Guatemala" data-provinces="[[&quot;Alta Verapaz&quot;,&quot;Alta Verapaz&quot;],[&quot;Baja Verapaz&quot;,&quot;Baja Verapaz&quot;],[&quot;Chimaltenango&quot;,&quot;Chimaltenango&quot;],[&quot;Chiquimula&quot;,&quot;Chiquimula&quot;],[&quot;El Progreso&quot;,&quot;El Progreso&quot;],[&quot;Escuintla&quot;,&quot;Escuintla&quot;],[&quot;Guatemala&quot;,&quot;Guatemala&quot;],[&quot;Huehuetenango&quot;,&quot;Huehuetenango&quot;],[&quot;Izabal&quot;,&quot;Izabal&quot;],[&quot;Jalapa&quot;,&quot;Jalapa&quot;],[&quot;Jutiapa&quot;,&quot;Jutiapa&quot;],[&quot;Petén&quot;,&quot;El Petén&quot;],[&quot;Quetzaltenango&quot;,&quot;Quetzaltenango&quot;],[&quot;Quiché&quot;,&quot;El Quiché&quot;],[&quot;Retalhuleu&quot;,&quot;Retalhuleu&quot;],[&quot;Sacatepéquez&quot;,&quot;Sacatepéquez&quot;],[&quot;San Marcos&quot;,&quot;San Marcos&quot;],[&quot;Santa Rosa&quot;,&quot;Santa Rosa&quot;],[&quot;Sololá&quot;,&quot;Sololá&quot;],[&quot;Suchitepéquez&quot;,&quot;Suchitepéquez&quot;],[&quot;Totonicapán&quot;,&quot;Totonicapán&quot;],[&quot;Zacapa&quot;,&quot;Zacapa&quot;]]">Guatemala</option>
+<option value="Guernsey" data-provinces="[]">Guernsey</option>
+<option value="Guyana" data-provinces="[]">Guiana</option>
+<option value="French Guiana" data-provinces="[]">Guiana Francesa</option>
+<option value="Guinea" data-provinces="[]">Guiné</option>
+<option value="Equatorial Guinea" data-provinces="[]">Guiné Equatorial</option>
+<option value="Guinea Bissau" data-provinces="[]">Guiné-Bissau</option>
+<option value="Haiti" data-provinces="[]">Haiti</option>
+<option value="Honduras" data-provinces="[]">Honduras</option>
+<option value="Hong Kong" data-provinces="[[&quot;Hong Kong Island&quot;,&quot;Ilha de Hong Kong&quot;],[&quot;Kowloon&quot;,&quot;Kowloon&quot;],[&quot;New Territories&quot;,&quot;Novos Territórios&quot;]]">Hong Kong, RAE da China</option>
+<option value="Hungary" data-provinces="[]">Hungria</option>
+<option value="Yemen" data-provinces="[]">Iêmen</option>
+<option value="Bouvet Island" data-provinces="[]">Ilha Bouvet</option>
+<option value="Christmas Island" data-provinces="[]">Ilha Christmas</option>
+<option value="Norfolk Island" data-provinces="[]">Ilha Norfolk</option>
+<option value="Ascension Island" data-provinces="[]">Ilha de Ascensão</option>
+<option value="Isle Of Man" data-provinces="[]">Ilha de Man</option>
+<option value="Aland Islands" data-provinces="[]">Ilhas Aland</option>
+<option value="Cayman Islands" data-provinces="[]">Ilhas Cayman</option>
+<option value="Cocos (Keeling) Islands" data-provinces="[]">Ilhas Cocos (Keeling)</option>
+<option value="Cook Islands" data-provinces="[]">Ilhas Cook</option>
+<option value="Faroe Islands" data-provinces="[]">Ilhas Faroe</option>
+<option value="South Georgia And The South Sandwich Islands" data-provinces="[]">Ilhas Geórgia do Sul e Sandwich do Sul</option>
+<option value="Heard Island And Mcdonald Islands" data-provinces="[]">Ilhas Heard e McDonald</option>
+<option value="Falkland Islands (Malvinas)" data-provinces="[]">Ilhas Malvinas</option>
+<option value="United States Minor Outlying Islands" data-provinces="[]">Ilhas Menores Distantes dos EUA</option>
+<option value="Pitcairn" data-provinces="[]">Ilhas Pitcairn</option>
+<option value="Solomon Islands" data-provinces="[]">Ilhas Salomão</option>
+<option value="Turks and Caicos Islands" data-provinces="[]">Ilhas Turcas e Caicos</option>
+<option value="Virgin Islands, British" data-provinces="[]">Ilhas Virgens Britânicas</option>
+<option value="India" data-provinces="[[&quot;Andaman and Nicobar Islands&quot;,&quot;Andamão e Nicobar&quot;],[&quot;Andhra Pradesh&quot;,&quot;Andhra Pradesh&quot;],[&quot;Arunachal Pradesh&quot;,&quot;Arunachal Pradesh&quot;],[&quot;Assam&quot;,&quot;Assam&quot;],[&quot;Bihar&quot;,&quot;Bihar&quot;],[&quot;Chandigarh&quot;,&quot;Chandigarh&quot;],[&quot;Chhattisgarh&quot;,&quot;Chhattisgarh&quot;],[&quot;Dadra and Nagar Haveli&quot;,&quot;Dadrá e Nagar-Aveli&quot;],[&quot;Daman and Diu&quot;,&quot;Damão e Diu&quot;],[&quot;Delhi&quot;,&quot;Deli&quot;],[&quot;Goa&quot;,&quot;Goa&quot;],[&quot;Gujarat&quot;,&quot;Gujarate&quot;],[&quot;Haryana&quot;,&quot;Haryana&quot;],[&quot;Himachal Pradesh&quot;,&quot;Himachal Pradesh&quot;],[&quot;Jammu and Kashmir&quot;,&quot;Jammu e Caxemira&quot;],[&quot;Jharkhand&quot;,&quot;Jharkhand&quot;],[&quot;Karnataka&quot;,&quot;Karnataka&quot;],[&quot;Kerala&quot;,&quot;Kerala&quot;],[&quot;Ladakh&quot;,&quot;Ladakh&quot;],[&quot;Lakshadweep&quot;,&quot;Laquedivas&quot;],[&quot;Madhya Pradesh&quot;,&quot;Madhya Pradesh&quot;],[&quot;Maharashtra&quot;,&quot;Maharashtra&quot;],[&quot;Manipur&quot;,&quot;Manipur&quot;],[&quot;Meghalaya&quot;,&quot;Meghalaya&quot;],[&quot;Mizoram&quot;,&quot;Mizoram&quot;],[&quot;Nagaland&quot;,&quot;Nagaland&quot;],[&quot;Odisha&quot;,&quot;Odisha&quot;],[&quot;Puducherry&quot;,&quot;Puducherry&quot;],[&quot;Punjab&quot;,&quot;Punjab&quot;],[&quot;Rajasthan&quot;,&quot;Rajastão&quot;],[&quot;Sikkim&quot;,&quot;Siquim&quot;],[&quot;Tamil Nadu&quot;,&quot;Tamil Nadu&quot;],[&quot;Telangana&quot;,&quot;Telangana&quot;],[&quot;Tripura&quot;,&quot;Tripura&quot;],[&quot;Uttar Pradesh&quot;,&quot;Uttar Pradesh&quot;],[&quot;Uttarakhand&quot;,&quot;Uttarakhand&quot;],[&quot;West Bengal&quot;,&quot;Bengala Ocidental&quot;]]">Índia</option>
+<option value="Indonesia" data-provinces="[[&quot;Aceh&quot;,&quot;Achém&quot;],[&quot;Bali&quot;,&quot;Bali&quot;],[&quot;Bangka Belitung&quot;,&quot;Bangka-Belitung&quot;],[&quot;Banten&quot;,&quot;Banten&quot;],[&quot;Bengkulu&quot;,&quot;Bengkulu&quot;],[&quot;Gorontalo&quot;,&quot;Gorontalo&quot;],[&quot;Jakarta&quot;,&quot;Jacarta&quot;],[&quot;Jambi&quot;,&quot;Jambi&quot;],[&quot;Jawa Barat&quot;,&quot;Java Ocidental&quot;],[&quot;Jawa Tengah&quot;,&quot;Java Central&quot;],[&quot;Jawa Timur&quot;,&quot;Java Oriental&quot;],[&quot;Kalimantan Barat&quot;,&quot;Kalimantan Ocidental&quot;],[&quot;Kalimantan Selatan&quot;,&quot;Kalimantan do Sul&quot;],[&quot;Kalimantan Tengah&quot;,&quot;Kalimantan Central&quot;],[&quot;Kalimantan Timur&quot;,&quot;Kalimantan Oriental&quot;],[&quot;Kalimantan Utara&quot;,&quot;Kalimantan Setentrional&quot;],[&quot;Kepulauan Riau&quot;,&quot;Ilhas Riau&quot;],[&quot;Lampung&quot;,&quot;Lampung&quot;],[&quot;Maluku&quot;,&quot;Molucas (província)&quot;],[&quot;Maluku Utara&quot;,&quot;Molucas do Norte&quot;],[&quot;North Sumatra&quot;,&quot;Sumatra do Norte&quot;],[&quot;Nusa Tenggara Barat&quot;,&quot;Sonda Ocidental&quot;],[&quot;Nusa Tenggara Timur&quot;,&quot;Sonda Oriental&quot;],[&quot;Papua&quot;,&quot;Papua&quot;],[&quot;Papua Barat&quot;,&quot;Papua Ocidental&quot;],[&quot;Riau&quot;,&quot;Riau&quot;],[&quot;South Sumatra&quot;,&quot;Sumatra do Sul&quot;],[&quot;Sulawesi Barat&quot;,&quot;Celebes Ocidental&quot;],[&quot;Sulawesi Selatan&quot;,&quot;Celebes do Sul&quot;],[&quot;Sulawesi Tengah&quot;,&quot;Celebes Central&quot;],[&quot;Sulawesi Tenggara&quot;,&quot;Celebes do Sudeste&quot;],[&quot;Sulawesi Utara&quot;,&quot;Celebes do Norte&quot;],[&quot;West Sumatra&quot;,&quot;Sumatra Ocidental&quot;],[&quot;Yogyakarta&quot;,&quot;Yogyakarta&quot;]]">Indonésia</option>
+<option value="Iraq" data-provinces="[]">Iraque</option>
+<option value="Ireland" data-provinces="[[&quot;Carlow&quot;,&quot;Condado de Carlow&quot;],[&quot;Cavan&quot;,&quot;Condado de Cavan&quot;],[&quot;Clare&quot;,&quot;Condado de Clare&quot;],[&quot;Cork&quot;,&quot;Condado de Cork&quot;],[&quot;Donegal&quot;,&quot;Condado de Donegal&quot;],[&quot;Dublin&quot;,&quot;Condado de Dublin&quot;],[&quot;Galway&quot;,&quot;Condado de Galway&quot;],[&quot;Kerry&quot;,&quot;Condado de Kerry&quot;],[&quot;Kildare&quot;,&quot;Condado de Kildare&quot;],[&quot;Kilkenny&quot;,&quot;Condado de Kilkenny&quot;],[&quot;Laois&quot;,&quot;Condado de Laois&quot;],[&quot;Leitrim&quot;,&quot;Condado de Leitrim&quot;],[&quot;Limerick&quot;,&quot;Condado de Limerick&quot;],[&quot;Longford&quot;,&quot;Condado de Longford&quot;],[&quot;Louth&quot;,&quot;Condado de Louth&quot;],[&quot;Mayo&quot;,&quot;Condado de Mayo&quot;],[&quot;Meath&quot;,&quot;Condado de Meath&quot;],[&quot;Monaghan&quot;,&quot;Condado de Monaghan&quot;],[&quot;Offaly&quot;,&quot;Condado de Offaly&quot;],[&quot;Roscommon&quot;,&quot;Condado de Roscommon&quot;],[&quot;Sligo&quot;,&quot;Condado de Sligo&quot;],[&quot;Tipperary&quot;,&quot;Condado de Tipperary&quot;],[&quot;Waterford&quot;,&quot;Condado de Waterford&quot;],[&quot;Westmeath&quot;,&quot;Condado de Westmeath&quot;],[&quot;Wexford&quot;,&quot;Condado de Wexford&quot;],[&quot;Wicklow&quot;,&quot;Condado de Wicklow&quot;]]">Irlanda</option>
+<option value="Iceland" data-provinces="[]">Islândia</option>
+<option value="Israel" data-provinces="[]">Israel</option>
+<option value="Italy" data-provinces="[[&quot;Agrigento&quot;,&quot;Agrigento&quot;],[&quot;Alessandria&quot;,&quot;Alexandria (província)&quot;],[&quot;Ancona&quot;,&quot;Ancona&quot;],[&quot;Aosta&quot;,&quot;Aosta&quot;],[&quot;Arezzo&quot;,&quot;Arezzo&quot;],[&quot;Ascoli Piceno&quot;,&quot;Ascoli Piceno&quot;],[&quot;Asti&quot;,&quot;Asti&quot;],[&quot;Avellino&quot;,&quot;Avellino&quot;],[&quot;Bari&quot;,&quot;Bari&quot;],[&quot;Barletta-Andria-Trani&quot;,&quot;Barletta-Andria-Trani&quot;],[&quot;Belluno&quot;,&quot;Belluno&quot;],[&quot;Benevento&quot;,&quot;Benevento&quot;],[&quot;Bergamo&quot;,&quot;Bérgamo&quot;],[&quot;Biella&quot;,&quot;Biella&quot;],[&quot;Bologna&quot;,&quot;Bolonha&quot;],[&quot;Bolzano&quot;,&quot;Província autónoma de Bolzano&quot;],[&quot;Brescia&quot;,&quot;Bréscia&quot;],[&quot;Brindisi&quot;,&quot;Brindisi&quot;],[&quot;Cagliari&quot;,&quot;Cagliari&quot;],[&quot;Caltanissetta&quot;,&quot;Caltanissetta&quot;],[&quot;Campobasso&quot;,&quot;Campobasso&quot;],[&quot;Carbonia-Iglesias&quot;,&quot;Carbonia-Iglesias&quot;],[&quot;Caserta&quot;,&quot;Caserta&quot;],[&quot;Catania&quot;,&quot;Catânia&quot;],[&quot;Catanzaro&quot;,&quot;Catanzaro&quot;],[&quot;Chieti&quot;,&quot;Chieti&quot;],[&quot;Como&quot;,&quot;Como&quot;],[&quot;Cosenza&quot;,&quot;Cosenza&quot;],[&quot;Cremona&quot;,&quot;Cremona&quot;],[&quot;Crotone&quot;,&quot;Crotone&quot;],[&quot;Cuneo&quot;,&quot;Cuneo&quot;],[&quot;Enna&quot;,&quot;Enna&quot;],[&quot;Fermo&quot;,&quot;Fermo&quot;],[&quot;Ferrara&quot;,&quot;Ferrara&quot;],[&quot;Firenze&quot;,&quot;Florença&quot;],[&quot;Foggia&quot;,&quot;Foggia&quot;],[&quot;Forlì-Cesena&quot;,&quot;Forlì-Cesena&quot;],[&quot;Frosinone&quot;,&quot;Frosinone&quot;],[&quot;Genova&quot;,&quot;Cidade Metropolitana de Genoa&quot;],[&quot;Gorizia&quot;,&quot;Gorizia&quot;],[&quot;Grosseto&quot;,&quot;Grosseto&quot;],[&quot;Imperia&quot;,&quot;Impéria&quot;],[&quot;Isernia&quot;,&quot;Isérnia&quot;],[&quot;L'Aquila&quot;,&quot;Áquila&quot;],[&quot;La Spezia&quot;,&quot;Spezia&quot;],[&quot;Latina&quot;,&quot;Latina&quot;],[&quot;Lecce&quot;,&quot;Lecce&quot;],[&quot;Lecco&quot;,&quot;Lecco&quot;],[&quot;Livorno&quot;,&quot;Livorno&quot;],[&quot;Lodi&quot;,&quot;Lodi&quot;],[&quot;Lucca&quot;,&quot;Lucca&quot;],[&quot;Macerata&quot;,&quot;Macerata&quot;],[&quot;Mantova&quot;,&quot;Mântua (província)&quot;],[&quot;Massa-Carrara&quot;,&quot;Massa-Carrara&quot;],[&quot;Matera&quot;,&quot;Matera&quot;],[&quot;Medio Campidano&quot;,&quot;Medio Campidano&quot;],[&quot;Messina&quot;,&quot;Messina&quot;],[&quot;Milano&quot;,&quot;Milão&quot;],[&quot;Modena&quot;,&quot;Módena&quot;],[&quot;Monza e Brianza&quot;,&quot;Província de Monza e Brianza&quot;],[&quot;Napoli&quot;,&quot;Nápoles&quot;],[&quot;Novara&quot;,&quot;Novara&quot;],[&quot;Nuoro&quot;,&quot;Nuoro&quot;],[&quot;Ogliastra&quot;,&quot;Ogliastra&quot;],[&quot;Olbia-Tempio&quot;,&quot;Olbia-Tempio&quot;],[&quot;Oristano&quot;,&quot;Oristano&quot;],[&quot;Padova&quot;,&quot;Pádua&quot;],[&quot;Palermo&quot;,&quot;Palermo&quot;],[&quot;Parma&quot;,&quot;Parma&quot;],[&quot;Pavia&quot;,&quot;Pavia&quot;],[&quot;Perugia&quot;,&quot;Perúgia&quot;],[&quot;Pesaro e Urbino&quot;,&quot;Pesaro e Urbino&quot;],[&quot;Pescara&quot;,&quot;Pescara&quot;],[&quot;Piacenza&quot;,&quot;Placência&quot;],[&quot;Pisa&quot;,&quot;Pisa&quot;],[&quot;Pistoia&quot;,&quot;Pistoia&quot;],[&quot;Pordenone&quot;,&quot;Pordenone&quot;],[&quot;Potenza&quot;,&quot;Potenza&quot;],[&quot;Prato&quot;,&quot;Prato&quot;],[&quot;Ragusa&quot;,&quot;Ragusa&quot;],[&quot;Ravenna&quot;,&quot;Ravena&quot;],[&quot;Reggio Calabria&quot;,&quot;Reggio Calabria&quot;],[&quot;Reggio Emilia&quot;,&quot;Reggio Emilia&quot;],[&quot;Rieti&quot;,&quot;Rieti&quot;],[&quot;Rimini&quot;,&quot;Rimini&quot;],[&quot;Roma&quot;,&quot;Roma&quot;],[&quot;Rovigo&quot;,&quot;Rovigo&quot;],[&quot;Salerno&quot;,&quot;Salerno&quot;],[&quot;Sassari&quot;,&quot;Sassari&quot;],[&quot;Savona&quot;,&quot;Savona&quot;],[&quot;Siena&quot;,&quot;Siena&quot;],[&quot;Siracusa&quot;,&quot;Siracusa&quot;],[&quot;Sondrio&quot;,&quot;Sondrio&quot;],[&quot;Taranto&quot;,&quot;Taranto&quot;],[&quot;Teramo&quot;,&quot;Téramo&quot;],[&quot;Terni&quot;,&quot;Terni&quot;],[&quot;Torino&quot;,&quot;Turim&quot;],[&quot;Trapani&quot;,&quot;Trapani&quot;],[&quot;Trento&quot;,&quot;Província autónoma de Trento&quot;],[&quot;Treviso&quot;,&quot;Treviso&quot;],[&quot;Trieste&quot;,&quot;Trieste&quot;],[&quot;Udine&quot;,&quot;Udine&quot;],[&quot;Varese&quot;,&quot;Varese&quot;],[&quot;Venezia&quot;,&quot;Veneza&quot;],[&quot;Verbano-Cusio-Ossola&quot;,&quot;Verbano Cusio Ossola&quot;],[&quot;Vercelli&quot;,&quot;Vercelli&quot;],[&quot;Verona&quot;,&quot;Verona&quot;],[&quot;Vibo Valentia&quot;,&quot;Vibo Valentia&quot;],[&quot;Vicenza&quot;,&quot;Vicenza&quot;],[&quot;Viterbo&quot;,&quot;Viterbo&quot;]]">Itália</option>
+<option value="Jamaica" data-provinces="[]">Jamaica</option>
+<option value="Japan" data-provinces="[[&quot;Aichi&quot;,&quot;Aichi&quot;],[&quot;Akita&quot;,&quot;Akita&quot;],[&quot;Aomori&quot;,&quot;Aomori&quot;],[&quot;Chiba&quot;,&quot;Chiba&quot;],[&quot;Ehime&quot;,&quot;Ehime&quot;],[&quot;Fukui&quot;,&quot;Fukui&quot;],[&quot;Fukuoka&quot;,&quot;Fukuoka&quot;],[&quot;Fukushima&quot;,&quot;Fukushima&quot;],[&quot;Gifu&quot;,&quot;Gifu&quot;],[&quot;Gunma&quot;,&quot;Gunma&quot;],[&quot;Hiroshima&quot;,&quot;Província de Hiroshima&quot;],[&quot;Hokkaidō&quot;,&quot;Hokkaido&quot;],[&quot;Hyōgo&quot;,&quot;Hyōgo&quot;],[&quot;Ibaraki&quot;,&quot;Ibaraki&quot;],[&quot;Ishikawa&quot;,&quot;Ishikawa&quot;],[&quot;Iwate&quot;,&quot;Iwate&quot;],[&quot;Kagawa&quot;,&quot;Kagawa&quot;],[&quot;Kagoshima&quot;,&quot;Kagoshima&quot;],[&quot;Kanagawa&quot;,&quot;Kanagawa&quot;],[&quot;Kumamoto&quot;,&quot;Kumamoto&quot;],[&quot;Kyōto&quot;,&quot;Quioto&quot;],[&quot;Kōchi&quot;,&quot;Kochi&quot;],[&quot;Mie&quot;,&quot;Mie&quot;],[&quot;Miyagi&quot;,&quot;Miyagi&quot;],[&quot;Miyazaki&quot;,&quot;Miyazaki&quot;],[&quot;Nagano&quot;,&quot;Nagano&quot;],[&quot;Nagasaki&quot;,&quot;Nagasaki&quot;],[&quot;Nara&quot;,&quot;Nara&quot;],[&quot;Niigata&quot;,&quot;Niigata&quot;],[&quot;Okayama&quot;,&quot;Okayama&quot;],[&quot;Okinawa&quot;,&quot;Okinawa&quot;],[&quot;Saga&quot;,&quot;Saga&quot;],[&quot;Saitama&quot;,&quot;Saitama&quot;],[&quot;Shiga&quot;,&quot;Shiga&quot;],[&quot;Shimane&quot;,&quot;Shimane&quot;],[&quot;Shizuoka&quot;,&quot;Shizuoka&quot;],[&quot;Tochigi&quot;,&quot;Tochigi&quot;],[&quot;Tokushima&quot;,&quot;Tokushima&quot;],[&quot;Tottori&quot;,&quot;Tottori&quot;],[&quot;Toyama&quot;,&quot;Toyama&quot;],[&quot;Tōkyō&quot;,&quot;Tóquio&quot;],[&quot;Wakayama&quot;,&quot;Wakayama&quot;],[&quot;Yamagata&quot;,&quot;Yamagata&quot;],[&quot;Yamaguchi&quot;,&quot;Yamaguchi&quot;],[&quot;Yamanashi&quot;,&quot;Yamanashi&quot;],[&quot;Ōita&quot;,&quot;Oita&quot;],[&quot;Ōsaka&quot;,&quot;Osaka&quot;]]">Japão</option>
+<option value="Jersey" data-provinces="[]">Jersey</option>
+<option value="Jordan" data-provinces="[]">Jordânia</option>
+<option value="Kosovo" data-provinces="[]">Kosovo</option>
+<option value="Kuwait" data-provinces="[]">Kuwait</option>
+<option value="Lao People's Democratic Republic" data-provinces="[]">Laos</option>
+<option value="Lesotho" data-provinces="[]">Lesoto</option>
+<option value="Latvia" data-provinces="[]">Letônia</option>
+<option value="Lebanon" data-provinces="[]">Líbano</option>
+<option value="Liberia" data-provinces="[]">Libéria</option>
+<option value="Libyan Arab Jamahiriya" data-provinces="[]">Líbia</option>
+<option value="Liechtenstein" data-provinces="[]">Liechtenstein</option>
+<option value="Lithuania" data-provinces="[]">Lituânia</option>
+<option value="Luxembourg" data-provinces="[]">Luxemburgo</option>
+<option value="Macao" data-provinces="[]">Macau, RAE da China</option>
+<option value="North Macedonia" data-provinces="[]">Macedônia do Norte</option>
+<option value="Madagascar" data-provinces="[]">Madagascar</option>
+<option value="Malaysia" data-provinces="[[&quot;Johor&quot;,&quot;Johor&quot;],[&quot;Kedah&quot;,&quot;Quedá&quot;],[&quot;Kelantan&quot;,&quot;Kelantan&quot;],[&quot;Kuala Lumpur&quot;,&quot;Kuala Lumpur&quot;],[&quot;Labuan&quot;,&quot;Labuan&quot;],[&quot;Melaka&quot;,&quot;Malaca&quot;],[&quot;Negeri Sembilan&quot;,&quot;Negeri Sembilan&quot;],[&quot;Pahang&quot;,&quot;Pahang&quot;],[&quot;Penang&quot;,&quot;Penang&quot;],[&quot;Perak&quot;,&quot;Perak&quot;],[&quot;Perlis&quot;,&quot;Perlis&quot;],[&quot;Putrajaya&quot;,&quot;Putrajaya&quot;],[&quot;Sabah&quot;,&quot;Sabá&quot;],[&quot;Sarawak&quot;,&quot;Sarawak&quot;],[&quot;Selangor&quot;,&quot;Selangor&quot;],[&quot;Terengganu&quot;,&quot;Terengganu&quot;]]">Malásia</option>
+<option value="Malawi" data-provinces="[]">Malaui</option>
+<option value="Maldives" data-provinces="[]">Maldivas</option>
+<option value="Mali" data-provinces="[]">Mali</option>
+<option value="Malta" data-provinces="[]">Malta</option>
+<option value="Morocco" data-provinces="[]">Marrocos</option>
+<option value="Martinique" data-provinces="[]">Martinica</option>
+<option value="Mauritius" data-provinces="[]">Maurício</option>
+<option value="Mauritania" data-provinces="[]">Mauritânia</option>
+<option value="Mayotte" data-provinces="[]">Mayotte</option>
+<option value="Mexico" data-provinces="[[&quot;Aguascalientes&quot;,&quot;Aguascalientes&quot;],[&quot;Baja California&quot;,&quot;Baja California&quot;],[&quot;Baja California Sur&quot;,&quot;Baja California Sur&quot;],[&quot;Campeche&quot;,&quot;Campeche&quot;],[&quot;Chiapas&quot;,&quot;Chiapas&quot;],[&quot;Chihuahua&quot;,&quot;Chihuahua&quot;],[&quot;Ciudad de México&quot;,&quot;Cidade do México&quot;],[&quot;Coahuila&quot;,&quot;Coahuila de Zaragoza&quot;],[&quot;Colima&quot;,&quot;Colima&quot;],[&quot;Durango&quot;,&quot;Durango&quot;],[&quot;Guanajuato&quot;,&quot;Guanajuato&quot;],[&quot;Guerrero&quot;,&quot;Guerrero&quot;],[&quot;Hidalgo&quot;,&quot;Hidalgo&quot;],[&quot;Jalisco&quot;,&quot;Jalisco&quot;],[&quot;Michoacán&quot;,&quot;Michoacán&quot;],[&quot;Morelos&quot;,&quot;Morelos&quot;],[&quot;México&quot;,&quot;México&quot;],[&quot;Nayarit&quot;,&quot;Nayarit&quot;],[&quot;Nuevo León&quot;,&quot;Nuevo León&quot;],[&quot;Oaxaca&quot;,&quot;Oaxaca&quot;],[&quot;Puebla&quot;,&quot;Puebla&quot;],[&quot;Querétaro&quot;,&quot;Querétaro&quot;],[&quot;Quintana Roo&quot;,&quot;Quintana Roo&quot;],[&quot;San Luis Potosí&quot;,&quot;San Luis Potosí&quot;],[&quot;Sinaloa&quot;,&quot;Sinaloa&quot;],[&quot;Sonora&quot;,&quot;Sonora&quot;],[&quot;Tabasco&quot;,&quot;Tabasco&quot;],[&quot;Tamaulipas&quot;,&quot;Tamaulipas&quot;],[&quot;Tlaxcala&quot;,&quot;Tlaxcala&quot;],[&quot;Veracruz&quot;,&quot;Veracruz&quot;],[&quot;Yucatán&quot;,&quot;Iucatã&quot;],[&quot;Zacatecas&quot;,&quot;Zacatecas&quot;]]">México</option>
+<option value="Myanmar" data-provinces="[]">Mianmar (Birmânia)</option>
+<option value="Mozambique" data-provinces="[]">Moçambique</option>
+<option value="Moldova, Republic of" data-provinces="[]">Moldova</option>
+<option value="Monaco" data-provinces="[]">Mônaco</option>
+<option value="Mongolia" data-provinces="[]">Mongólia</option>
+<option value="Montenegro" data-provinces="[]">Montenegro</option>
+<option value="Montserrat" data-provinces="[]">Montserrat</option>
+<option value="Namibia" data-provinces="[]">Namíbia</option>
+<option value="Nauru" data-provinces="[]">Nauru</option>
+<option value="Nepal" data-provinces="[]">Nepal</option>
+<option value="Nicaragua" data-provinces="[]">Nicarágua</option>
+<option value="Niger" data-provinces="[]">Níger</option>
+<option value="Nigeria" data-provinces="[[&quot;Abia&quot;,&quot;Abia (estado)&quot;],[&quot;Abuja Federal Capital Territory&quot;,&quot;Território da Capital Federal da Nigéria&quot;],[&quot;Adamawa&quot;,&quot;Adamawa&quot;],[&quot;Akwa Ibom&quot;,&quot;Akwa Ibom (estado)&quot;],[&quot;Anambra&quot;,&quot;Anambra (estado)&quot;],[&quot;Bauchi&quot;,&quot;Bauchi&quot;],[&quot;Bayelsa&quot;,&quot;Bayelsa&quot;],[&quot;Benue&quot;,&quot;Benue&quot;],[&quot;Borno&quot;,&quot;Borno&quot;],[&quot;Cross River&quot;,&quot;Cross River&quot;],[&quot;Delta&quot;,&quot;Delta&quot;],[&quot;Ebonyi&quot;,&quot;Ebonyi&quot;],[&quot;Edo&quot;,&quot;Edo&quot;],[&quot;Ekiti&quot;,&quot;Ekiti&quot;],[&quot;Enugu&quot;,&quot;Enugu&quot;],[&quot;Gombe&quot;,&quot;Gombe&quot;],[&quot;Imo&quot;,&quot;Imo&quot;],[&quot;Jigawa&quot;,&quot;Jigawa&quot;],[&quot;Kaduna&quot;,&quot;Kaduna&quot;],[&quot;Kano&quot;,&quot;Kano&quot;],[&quot;Katsina&quot;,&quot;Katsina&quot;],[&quot;Kebbi&quot;,&quot;Kebbi&quot;],[&quot;Kogi&quot;,&quot;Kogi&quot;],[&quot;Kwara&quot;,&quot;Kwara&quot;],[&quot;Lagos&quot;,&quot;Lagos&quot;],[&quot;Nasarawa&quot;,&quot;Nasarawa&quot;],[&quot;Niger&quot;,&quot;Níger&quot;],[&quot;Ogun&quot;,&quot;Ogun&quot;],[&quot;Ondo&quot;,&quot;Ondo&quot;],[&quot;Osun&quot;,&quot;Osun&quot;],[&quot;Oyo&quot;,&quot;Oyo&quot;],[&quot;Plateau&quot;,&quot;Plateau&quot;],[&quot;Rivers&quot;,&quot;Rivers&quot;],[&quot;Sokoto&quot;,&quot;Sokoto&quot;],[&quot;Taraba&quot;,&quot;Taraba&quot;],[&quot;Yobe&quot;,&quot;Yobe&quot;],[&quot;Zamfara&quot;,&quot;Zamfara (estado)&quot;]]">Nigéria</option>
+<option value="Niue" data-provinces="[]">Niue</option>
+<option value="Norway" data-provinces="[]">Noruega</option>
+<option value="New Caledonia" data-provinces="[]">Nova Caledônia</option>
+<option value="New Zealand" data-provinces="[[&quot;Auckland&quot;,&quot;Auckland&quot;],[&quot;Bay of Plenty&quot;,&quot;Região da Baia de Plenty&quot;],[&quot;Canterbury&quot;,&quot;Canterbury&quot;],[&quot;Chatham Islands&quot;,&quot;Ilhas Chatham&quot;],[&quot;Gisborne&quot;,&quot;Gisborne&quot;],[&quot;Hawke's Bay&quot;,&quot;Hawke’s Bay&quot;],[&quot;Manawatu-Wanganui&quot;,&quot;Manawatu-Wanganui&quot;],[&quot;Marlborough&quot;,&quot;Região de Marborough&quot;],[&quot;Nelson&quot;,&quot;Nelson&quot;],[&quot;Northland&quot;,&quot;Northland&quot;],[&quot;Otago&quot;,&quot;Otago&quot;],[&quot;Southland&quot;,&quot;Southland&quot;],[&quot;Taranaki&quot;,&quot;Taranaki&quot;],[&quot;Tasman&quot;,&quot;Tasman&quot;],[&quot;Waikato&quot;,&quot;Waikato&quot;],[&quot;Wellington&quot;,&quot;Wellington&quot;],[&quot;West Coast&quot;,&quot;Costa Oeste&quot;]]">Nova Zelândia</option>
+<option value="Oman" data-provinces="[]">Omã</option>
+<option value="Netherlands" data-provinces="[]">Países Baixos</option>
+<option value="Caribbean Netherlands" data-provinces="[]">Países Baixos Caribenhos</option>
+<option value="Panama" data-provinces="[[&quot;Bocas del Toro&quot;,&quot;Bocas del Toro&quot;],[&quot;Chiriquí&quot;,&quot;Chiriquí&quot;],[&quot;Coclé&quot;,&quot;Coclé&quot;],[&quot;Colón&quot;,&quot;Colón&quot;],[&quot;Darién&quot;,&quot;Darién&quot;],[&quot;Emberá&quot;,&quot;Emberá&quot;],[&quot;Herrera&quot;,&quot;Herrera&quot;],[&quot;Kuna Yala&quot;,&quot;Kuna Yala&quot;],[&quot;Los Santos&quot;,&quot;Los Santos&quot;],[&quot;Ngöbe-Buglé&quot;,&quot;Ngöbe-Buglé&quot;],[&quot;Panamá&quot;,&quot;Panamá&quot;],[&quot;Panamá Oeste&quot;,&quot;Panamá Oeste&quot;],[&quot;Veraguas&quot;,&quot;Veraguas&quot;]]">Panamá</option>
+<option value="Papua New Guinea" data-provinces="[]">Papua-Nova Guiné</option>
+<option value="Pakistan" data-provinces="[]">Paquistão</option>
+<option value="Paraguay" data-provinces="[]">Paraguai</option>
+<option value="Peru" data-provinces="[[&quot;Amazonas&quot;,&quot;Amazonas&quot;],[&quot;Apurímac&quot;,&quot;Apurímac&quot;],[&quot;Arequipa&quot;,&quot;Arequipa&quot;],[&quot;Ayacucho&quot;,&quot;Ayacucho&quot;],[&quot;Cajamarca&quot;,&quot;Cajamarca&quot;],[&quot;Callao&quot;,&quot;Callao&quot;],[&quot;Cuzco&quot;,&quot;Cusco&quot;],[&quot;Huancavelica&quot;,&quot;Huancavelica&quot;],[&quot;Huánuco&quot;,&quot;Huánuco&quot;],[&quot;Ica&quot;,&quot;Ica&quot;],[&quot;Junín&quot;,&quot;Junín&quot;],[&quot;La Libertad&quot;,&quot;Liberdade&quot;],[&quot;Lambayeque&quot;,&quot;Lambayeque&quot;],[&quot;Lima (departamento)&quot;,&quot;Lima&quot;],[&quot;Lima (provincia)&quot;,&quot;Lima²&quot;],[&quot;Loreto&quot;,&quot;Loreto&quot;],[&quot;Madre de Dios&quot;,&quot;Madre de Deus (região)&quot;],[&quot;Moquegua&quot;,&quot;Moquegua&quot;],[&quot;Pasco&quot;,&quot;Pasco&quot;],[&quot;Piura&quot;,&quot;Piura&quot;],[&quot;Puno&quot;,&quot;Puno&quot;],[&quot;San Martín&quot;,&quot;San Martín&quot;],[&quot;Tacna&quot;,&quot;Tacna&quot;],[&quot;Tumbes&quot;,&quot;Tumbes&quot;],[&quot;Ucayali&quot;,&quot;Ucayali&quot;],[&quot;Áncash&quot;,&quot;Ancash&quot;]]">Peru</option>
+<option value="French Polynesia" data-provinces="[]">Polinésia Francesa</option>
+<option value="Poland" data-provinces="[]">Polônia</option>
+<option value="Portugal" data-provinces="[[&quot;Aveiro&quot;,&quot;Aveiro&quot;],[&quot;Açores&quot;,&quot;Açores&quot;],[&quot;Beja&quot;,&quot;Beja&quot;],[&quot;Braga&quot;,&quot;Braga&quot;],[&quot;Bragança&quot;,&quot;Bragança&quot;],[&quot;Castelo Branco&quot;,&quot;Castelo Branco&quot;],[&quot;Coimbra&quot;,&quot;Coimbra&quot;],[&quot;Faro&quot;,&quot;Faro&quot;],[&quot;Guarda&quot;,&quot;Guarda&quot;],[&quot;Leiria&quot;,&quot;Leiria&quot;],[&quot;Lisboa&quot;,&quot;Lisboa&quot;],[&quot;Madeira&quot;,&quot;Madeira&quot;],[&quot;Portalegre&quot;,&quot;Portalegre&quot;],[&quot;Porto&quot;,&quot;Porto&quot;],[&quot;Santarém&quot;,&quot;Santarém&quot;],[&quot;Setúbal&quot;,&quot;Setúbal&quot;],[&quot;Viana do Castelo&quot;,&quot;Viana do Castelo&quot;],[&quot;Vila Real&quot;,&quot;Vila Real&quot;],[&quot;Viseu&quot;,&quot;Viseu&quot;],[&quot;Évora&quot;,&quot;Évora&quot;]]">Portugal</option>
+<option value="Kenya" data-provinces="[]">Quênia</option>
+<option value="Kyrgyzstan" data-provinces="[]">Quirguistão</option>
+<option value="Kiribati" data-provinces="[]">Quiribati</option>
+<option value="United Kingdom" data-provinces="[[&quot;British Forces&quot;,&quot;British Forces&quot;],[&quot;England&quot;,&quot;Inglaterra&quot;],[&quot;Northern Ireland&quot;,&quot;Irlanda do Norte&quot;],[&quot;Scotland&quot;,&quot;Escócia&quot;],[&quot;Wales&quot;,&quot;País de Gales&quot;]]">Reino Unido</option>
+<option value="Central African Republic" data-provinces="[]">República Centro-Africana</option>
+<option value="Dominican Republic" data-provinces="[]">República Dominicana</option>
+<option value="Congo" data-provinces="[]">República do Congo</option>
+<option value="Reunion" data-provinces="[]">Reunião</option>
+<option value="Romania" data-provinces="[[&quot;Alba&quot;,&quot;Alba&quot;],[&quot;Arad&quot;,&quot;Arad&quot;],[&quot;Argeș&quot;,&quot;Argeş&quot;],[&quot;Bacău&quot;,&quot;Bacău&quot;],[&quot;Bihor&quot;,&quot;Bihor&quot;],[&quot;Bistrița-Năsăud&quot;,&quot;Bistrița-Năsăud&quot;],[&quot;Botoșani&quot;,&quot;Botoşani&quot;],[&quot;Brașov&quot;,&quot;Brașov&quot;],[&quot;Brăila&quot;,&quot;Brăila&quot;],[&quot;București&quot;,&quot;Bucareste&quot;],[&quot;Buzău&quot;,&quot;Buzău&quot;],[&quot;Caraș-Severin&quot;,&quot;Caraş-Severin&quot;],[&quot;Cluj&quot;,&quot;Cluj&quot;],[&quot;Constanța&quot;,&quot;Constanţa&quot;],[&quot;Covasna&quot;,&quot;Covasna&quot;],[&quot;Călărași&quot;,&quot;Călăraşi&quot;],[&quot;Dolj&quot;,&quot;Dolj&quot;],[&quot;Dâmbovița&quot;,&quot;Dâmboviţa&quot;],[&quot;Galați&quot;,&quot;Galaţi&quot;],[&quot;Giurgiu&quot;,&quot;Giurgiu&quot;],[&quot;Gorj&quot;,&quot;Gorj&quot;],[&quot;Harghita&quot;,&quot;Harghita&quot;],[&quot;Hunedoara&quot;,&quot;Hunedoara&quot;],[&quot;Ialomița&quot;,&quot;Ialomiţa&quot;],[&quot;Iași&quot;,&quot;Iaşi&quot;],[&quot;Ilfov&quot;,&quot;Ilfov&quot;],[&quot;Maramureș&quot;,&quot;Maramureș&quot;],[&quot;Mehedinți&quot;,&quot;Mehedinţi&quot;],[&quot;Mureș&quot;,&quot;Mureș&quot;],[&quot;Neamț&quot;,&quot;Neamţ&quot;],[&quot;Olt&quot;,&quot;Olt&quot;],[&quot;Prahova&quot;,&quot;Prahova&quot;],[&quot;Satu Mare&quot;,&quot;Satu Mare&quot;],[&quot;Sibiu&quot;,&quot;Sibiu&quot;],[&quot;Suceava&quot;,&quot;Suceava&quot;],[&quot;Sălaj&quot;,&quot;Sălaj&quot;],[&quot;Teleorman&quot;,&quot;Teleorman&quot;],[&quot;Timiș&quot;,&quot;Timiş&quot;],[&quot;Tulcea&quot;,&quot;Tulcea&quot;],[&quot;Vaslui&quot;,&quot;Vaslui&quot;],[&quot;Vrancea&quot;,&quot;Vrancea&quot;],[&quot;Vâlcea&quot;,&quot;Vâlcea&quot;]]">Romênia</option>
+<option value="Rwanda" data-provinces="[]">Ruanda</option>
+<option value="Russia" data-provinces="[[&quot;Altai Krai&quot;,&quot;Krai de Altai&quot;],[&quot;Altai Republic&quot;,&quot;Altai (república)&quot;],[&quot;Amur Oblast&quot;,&quot;Oblast de Amur&quot;],[&quot;Arkhangelsk Oblast&quot;,&quot;Oblast de Arkhangelsk&quot;],[&quot;Astrakhan Oblast&quot;,&quot;Oblast de Astracã&quot;],[&quot;Belgorod Oblast&quot;,&quot;Oblast de Belgorod&quot;],[&quot;Bryansk Oblast&quot;,&quot;Oblast de Briansk&quot;],[&quot;Chechen Republic&quot;,&quot;Chechênia&quot;],[&quot;Chelyabinsk Oblast&quot;,&quot;Oblast de Cheliabinsk&quot;],[&quot;Chukotka Autonomous Okrug&quot;,&quot;Chukotka&quot;],[&quot;Chuvash Republic&quot;,&quot;Chuváchia&quot;],[&quot;Irkutsk Oblast&quot;,&quot;Oblast de Irkutsk&quot;],[&quot;Ivanovo Oblast&quot;,&quot;Oblast de Ivanovo&quot;],[&quot;Jewish Autonomous Oblast&quot;,&quot;Oblast Autônomo Judaico&quot;],[&quot;Kabardino-Balkarian Republic&quot;,&quot;Cabárdia-Balcária&quot;],[&quot;Kaliningrad Oblast&quot;,&quot;Oblast de Kaliningrado&quot;],[&quot;Kaluga Oblast&quot;,&quot;Oblast de Kaluga&quot;],[&quot;Kamchatka Krai&quot;,&quot;Krai de Kamtchatka&quot;],[&quot;Karachay–Cherkess Republic&quot;,&quot;Carachai-Circássia&quot;],[&quot;Kemerovo Oblast&quot;,&quot;Oblast de Kemerovo&quot;],[&quot;Khabarovsk Krai&quot;,&quot;Krai de Khabarovsk&quot;],[&quot;Khanty-Mansi Autonomous Okrug&quot;,&quot;Khantia-Mansia&quot;],[&quot;Kirov Oblast&quot;,&quot;Oblast de Kirov&quot;],[&quot;Komi Republic&quot;,&quot;República de Komi&quot;],[&quot;Kostroma Oblast&quot;,&quot;Oblast de Kostroma&quot;],[&quot;Krasnodar Krai&quot;,&quot;Krai de Krasnodar&quot;],[&quot;Krasnoyarsk Krai&quot;,&quot;Krai de Krasnoiarsk&quot;],[&quot;Kurgan Oblast&quot;,&quot;Oblast de Kurgan&quot;],[&quot;Kursk Oblast&quot;,&quot;Oblast de Kursk&quot;],[&quot;Leningrad Oblast&quot;,&quot;Oblast de Leningrado&quot;],[&quot;Lipetsk Oblast&quot;,&quot;Oblast de Lipetsk&quot;],[&quot;Magadan Oblast&quot;,&quot;Oblast de Magadan&quot;],[&quot;Mari El Republic&quot;,&quot;Mari El&quot;],[&quot;Moscow&quot;,&quot;Moscovo&quot;],[&quot;Moscow Oblast&quot;,&quot;Oblast de Moscou&quot;],[&quot;Murmansk Oblast&quot;,&quot;Oblast de Murmansk&quot;],[&quot;Nizhny Novgorod Oblast&quot;,&quot;Oblast de Níjni Novgorod&quot;],[&quot;Novgorod Oblast&quot;,&quot;Oblast de Novgorod&quot;],[&quot;Novosibirsk Oblast&quot;,&quot;Oblast de Novosibirsk&quot;],[&quot;Omsk Oblast&quot;,&quot;Oblast de Omsk&quot;],[&quot;Orenburg Oblast&quot;,&quot;Oblast de Oremburgo&quot;],[&quot;Oryol Oblast&quot;,&quot;Oblast de Oriol&quot;],[&quot;Penza Oblast&quot;,&quot;Oblast de Penza&quot;],[&quot;Perm Krai&quot;,&quot;Krai de Perm&quot;],[&quot;Primorsky Krai&quot;,&quot;Krai do Litoral&quot;],[&quot;Pskov Oblast&quot;,&quot;Oblast de Pskov&quot;],[&quot;Republic of Adygeya&quot;,&quot;Adiguésia&quot;],[&quot;Republic of Bashkortostan&quot;,&quot;Bascortostão&quot;],[&quot;Republic of Buryatia&quot;,&quot;Buriácia&quot;],[&quot;Republic of Dagestan&quot;,&quot;Daguestão&quot;],[&quot;Republic of Ingushetia&quot;,&quot;Inguchétia&quot;],[&quot;Republic of Kalmykia&quot;,&quot;Calmúquia&quot;],[&quot;Republic of Karelia&quot;,&quot;República da Carélia&quot;],[&quot;Republic of Khakassia&quot;,&quot;Cacássia&quot;],[&quot;Republic of Mordovia&quot;,&quot;Mordóvia&quot;],[&quot;Republic of North Ossetia–Alania&quot;,&quot;Ossétia do Norte-Alânia&quot;],[&quot;Republic of Tatarstan&quot;,&quot;Tartaristão&quot;],[&quot;Rostov Oblast&quot;,&quot;Oblast de Rostov&quot;],[&quot;Ryazan Oblast&quot;,&quot;Oblast de Riazan&quot;],[&quot;Saint Petersburg&quot;,&quot;São Petersburgo&quot;],[&quot;Sakha Republic (Yakutia)&quot;,&quot;Iacútia&quot;],[&quot;Sakhalin Oblast&quot;,&quot;Oblast de Sacalina&quot;],[&quot;Samara Oblast&quot;,&quot;Oblast de Samara&quot;],[&quot;Saratov Oblast&quot;,&quot;Oblast de Saratov&quot;],[&quot;Smolensk Oblast&quot;,&quot;Oblast de Smolensk&quot;],[&quot;Stavropol Krai&quot;,&quot;Krai de Stavropol&quot;],[&quot;Sverdlovsk Oblast&quot;,&quot;Oblast de Sverdlovsk&quot;],[&quot;Tambov Oblast&quot;,&quot;Oblast de Tambov&quot;],[&quot;Tomsk Oblast&quot;,&quot;Oblast de Tomsk&quot;],[&quot;Tula Oblast&quot;,&quot;Oblast de Tula&quot;],[&quot;Tver Oblast&quot;,&quot;Oblast de Tver&quot;],[&quot;Tyumen Oblast&quot;,&quot;Oblast de Tiumen&quot;],[&quot;Tyva Republic&quot;,&quot;Tuva&quot;],[&quot;Udmurtia&quot;,&quot;Udmúrtia&quot;],[&quot;Ulyanovsk Oblast&quot;,&quot;Oblast de Ulianovsk&quot;],[&quot;Vladimir Oblast&quot;,&quot;Oblast de Vladimir&quot;],[&quot;Volgograd Oblast&quot;,&quot;Oblast de Volgogrado&quot;],[&quot;Vologda Oblast&quot;,&quot;Oblast de Vologda&quot;],[&quot;Voronezh Oblast&quot;,&quot;Oblast de Voronej&quot;],[&quot;Yamalo-Nenets Autonomous Okrug&quot;,&quot;Iamália&quot;],[&quot;Yaroslavl Oblast&quot;,&quot;Oblast de Iaroslavl&quot;],[&quot;Zabaykalsky Krai&quot;,&quot;Krai de Zabaykalsky&quot;]]">Rússia</option>
+<option value="Western Sahara" data-provinces="[]">Saara Ocidental</option>
+<option value="Samoa" data-provinces="[]">Samoa</option>
+<option value="San Marino" data-provinces="[]">San Marino</option>
+<option value="Saint Helena" data-provinces="[]">Santa Helena</option>
+<option value="Saint Lucia" data-provinces="[]">Santa Lúcia</option>
+<option value="Saint Barthélemy" data-provinces="[]">São Bartolomeu</option>
+<option value="Saint Kitts And Nevis" data-provinces="[]">São Cristóvão e Névis</option>
+<option value="Saint Martin" data-provinces="[]">São Martinho</option>
+<option value="Saint Pierre And Miquelon" data-provinces="[]">São Pedro e Miquelão</option>
+<option value="Sao Tome And Principe" data-provinces="[]">São Tomé e Príncipe</option>
+<option value="St. Vincent" data-provinces="[]">São Vicente e Granadinas</option>
+<option value="Seychelles" data-provinces="[]">Seicheles</option>
+<option value="Senegal" data-provinces="[]">Senegal</option>
+<option value="Sierra Leone" data-provinces="[]">Serra Leoa</option>
+<option value="Serbia" data-provinces="[]">Sérvia</option>
+<option value="Singapore" data-provinces="[]">Singapura</option>
+<option value="Sint Maarten" data-provinces="[]">Sint Maarten</option>
+<option value="Somalia" data-provinces="[]">Somália</option>
+<option value="Sri Lanka" data-provinces="[]">Sri Lanka</option>
+<option value="Sudan" data-provinces="[]">Sudão</option>
+<option value="South Sudan" data-provinces="[]">Sudão do Sul</option>
+<option value="Sweden" data-provinces="[]">Suécia</option>
+<option value="Switzerland" data-provinces="[]">Suíça</option>
+<option value="Suriname" data-provinces="[]">Suriname</option>
+<option value="Svalbard And Jan Mayen" data-provinces="[]">Svalbard e Jan Mayen</option>
+<option value="Tajikistan" data-provinces="[]">Tadjiquistão</option>
+<option value="Thailand" data-provinces="[[&quot;Amnat Charoen&quot;,&quot;Amnat Charoen&quot;],[&quot;Ang Thong&quot;,&quot;Ang Thong&quot;],[&quot;Bangkok&quot;,&quot;Banguecoque&quot;],[&quot;Bueng Kan&quot;,&quot;Bungkan&quot;],[&quot;Buriram&quot;,&quot;Buri Ram&quot;],[&quot;Chachoengsao&quot;,&quot;Chachoengsao&quot;],[&quot;Chai Nat&quot;,&quot;Chai Nat&quot;],[&quot;Chaiyaphum&quot;,&quot;Chaiyaphum&quot;],[&quot;Chanthaburi&quot;,&quot;Chanthaburi&quot;],[&quot;Chiang Mai&quot;,&quot;Chiang Mai&quot;],[&quot;Chiang Rai&quot;,&quot;Chiang Rai&quot;],[&quot;Chon Buri&quot;,&quot;Chon Buri&quot;],[&quot;Chumphon&quot;,&quot;Chumphon&quot;],[&quot;Kalasin&quot;,&quot;Kalasin&quot;],[&quot;Kamphaeng Phet&quot;,&quot;Kamphaeng Phet&quot;],[&quot;Kanchanaburi&quot;,&quot;Kanchanaburi&quot;],[&quot;Khon Kaen&quot;,&quot;Khon Kaen&quot;],[&quot;Krabi&quot;,&quot;Krabi&quot;],[&quot;Lampang&quot;,&quot;Lampang&quot;],[&quot;Lamphun&quot;,&quot;Lamphun&quot;],[&quot;Loei&quot;,&quot;Loei&quot;],[&quot;Lopburi&quot;,&quot;Lop Buri&quot;],[&quot;Mae Hong Son&quot;,&quot;Mae Hong Son&quot;],[&quot;Maha Sarakham&quot;,&quot;Maha Sarakham&quot;],[&quot;Mukdahan&quot;,&quot;Mukdahan&quot;],[&quot;Nakhon Nayok&quot;,&quot;Nakhon Nayok&quot;],[&quot;Nakhon Pathom&quot;,&quot;Nakhon Pathom&quot;],[&quot;Nakhon Phanom&quot;,&quot;Nakhon Phanom&quot;],[&quot;Nakhon Ratchasima&quot;,&quot;Nakhon Ratchasima&quot;],[&quot;Nakhon Sawan&quot;,&quot;Nakhon Sawan&quot;],[&quot;Nakhon Si Thammarat&quot;,&quot;Província de Nakhon Si Thammarat&quot;],[&quot;Nan&quot;,&quot;Nan&quot;],[&quot;Narathiwat&quot;,&quot;Narathiwat&quot;],[&quot;Nong Bua Lam Phu&quot;,&quot;Nong Bua Lam Phu&quot;],[&quot;Nong Khai&quot;,&quot;Nong Khai&quot;],[&quot;Nonthaburi&quot;,&quot;Nonthaburi&quot;],[&quot;Pathum Thani&quot;,&quot;Pathum Thani&quot;],[&quot;Pattani&quot;,&quot;Pattani&quot;],[&quot;Pattaya&quot;,&quot;Pattaya&quot;],[&quot;Phangnga&quot;,&quot;Phangnga&quot;],[&quot;Phatthalung&quot;,&quot;Phatthalung&quot;],[&quot;Phayao&quot;,&quot;Phayao&quot;],[&quot;Phetchabun&quot;,&quot;Phetchabun&quot;],[&quot;Phetchaburi&quot;,&quot;Phetchaburi&quot;],[&quot;Phichit&quot;,&quot;Phichit&quot;],[&quot;Phitsanulok&quot;,&quot;Phitsanulok&quot;],[&quot;Phra Nakhon Si Ayutthaya&quot;,&quot;Phra Nakhon Si Ayutthaya&quot;],[&quot;Phrae&quot;,&quot;Phrae&quot;],[&quot;Phuket&quot;,&quot;Phuket&quot;],[&quot;Prachin Buri&quot;,&quot;Prachin Buri&quot;],[&quot;Prachuap Khiri Khan&quot;,&quot;Prachuap Khiri Khan&quot;],[&quot;Ranong&quot;,&quot;Ranong&quot;],[&quot;Ratchaburi&quot;,&quot;Ratchaburi&quot;],[&quot;Rayong&quot;,&quot;Rayong&quot;],[&quot;Roi Et&quot;,&quot;Roi Et&quot;],[&quot;Sa Kaeo&quot;,&quot;Sa Kaeo&quot;],[&quot;Sakon Nakhon&quot;,&quot;Sakon Nakhon&quot;],[&quot;Samut Prakan&quot;,&quot;Samut Prakan&quot;],[&quot;Samut Sakhon&quot;,&quot;Samut Sakhon&quot;],[&quot;Samut Songkhram&quot;,&quot;Samut Songkhram&quot;],[&quot;Saraburi&quot;,&quot;Saraburi&quot;],[&quot;Satun&quot;,&quot;Satun&quot;],[&quot;Sing Buri&quot;,&quot;Sing Buri&quot;],[&quot;Sisaket&quot;,&quot;Si Sa Ket&quot;],[&quot;Songkhla&quot;,&quot;Songkhla&quot;],[&quot;Sukhothai&quot;,&quot;Sukhothai&quot;],[&quot;Suphan Buri&quot;,&quot;Suphan Buri&quot;],[&quot;Surat Thani&quot;,&quot;Surat Thani&quot;],[&quot;Surin&quot;,&quot;Surin&quot;],[&quot;Tak&quot;,&quot;Tak&quot;],[&quot;Trang&quot;,&quot;Trang&quot;],[&quot;Trat&quot;,&quot;Trat&quot;],[&quot;Ubon Ratchathani&quot;,&quot;Ubon Ratchathani&quot;],[&quot;Udon Thani&quot;,&quot;Udon Thani&quot;],[&quot;Uthai Thani&quot;,&quot;Uthai Thani&quot;],[&quot;Uttaradit&quot;,&quot;Uttaradit&quot;],[&quot;Yala&quot;,&quot;Yala&quot;],[&quot;Yasothon&quot;,&quot;Yasothon&quot;]]">Tailândia</option>
+<option value="Taiwan" data-provinces="[]">Taiwan</option>
+<option value="Tanzania, United Republic Of" data-provinces="[]">Tanzânia</option>
+<option value="Czech Republic" data-provinces="[]">Tchéquia</option>
+<option value="British Indian Ocean Territory" data-provinces="[]">Território Britânico do Oceano Índico</option>
+<option value="French Southern Territories" data-provinces="[]">Territórios Franceses do Sul</option>
+<option value="Palestinian Territory, Occupied" data-provinces="[]">Territórios palestinos</option>
+<option value="Timor Leste" data-provinces="[]">Timor-Leste</option>
+<option value="Togo" data-provinces="[]">Togo</option>
+<option value="Tokelau" data-provinces="[]">Tokelau</option>
+<option value="Tonga" data-provinces="[]">Tonga</option>
+<option value="Trinidad and Tobago" data-provinces="[]">Trinidad e Tobago</option>
+<option value="Tristan da Cunha" data-provinces="[]">Tristão da Cunha</option>
+<option value="Tunisia" data-provinces="[]">Tunísia</option>
+<option value="Turkmenistan" data-provinces="[]">Turcomenistão</option>
+<option value="Turkey" data-provinces="[]">Turquia</option>
+<option value="Tuvalu" data-provinces="[]">Tuvalu</option>
+<option value="Ukraine" data-provinces="[]">Ucrânia</option>
+<option value="Uganda" data-provinces="[]">Uganda</option>
+<option value="Uruguay" data-provinces="[]">Uruguai</option>
+<option value="Uzbekistan" data-provinces="[]">Uzbequistão</option>
+<option value="Vanuatu" data-provinces="[]">Vanuatu</option>
+<option value="Venezuela" data-provinces="[]">Venezuela</option>
+<option value="Vietnam" data-provinces="[]">Vietnã</option>
+<option value="Wallis And Futuna" data-provinces="[]">Wallis e Futuna</option>
+<option value="Zambia" data-provinces="[]">Zâmbia</option>
+<option value="Zimbabwe" data-provinces="[]">Zimbábue</option></select>
+                          </div>
+                        </div>
+
+                        <div class="form__input-wrapper" style="display: none">
+                          <label for="shipping-estimator-province" class="form__label form__label--light">Estado</label>
+
+                          <div class="select-wrapper select-wrapper--primary"><svg class="icon icon--arrow-bottom" viewBox="0 0 12 8" role="presentation">
+      <path stroke="currentColor" stroke-width="2" d="M10 2L6 6 2 2" fill="none" stroke-linecap="square"></path>
+    </svg><select name="province" id="shipping-estimator-province" data-default=""></select>
+                          </div>
+                        </div>
+
+                        <div class="form__input-wrapper" style="max-width: 155px">
+                          <label for="shipping-estimator-zip" class="form__label form__label--light">CEP</label>
+                          <input type="text" name="zip" id="shipping-estimator-zip" class="form__field form__field--text" value="" required="">
+                        </div>
+
+                        <div class="form__input-wrapper hidden-phone">
+                          <button type="button" class="form__submit button button--secondary" data-action="estimate-shipping">Estimativa</button>
+                        </div>
+                      </div>
+
+                      <button type="button" class="form__submit button button--secondary hidden-tablet-and-up" data-action="estimate-shipping">Estimativa</button>
+
+                      <div class="shipping-estimator__results" style="display: none;"></div>
+                    </div>
+                  </div>
+                </div>
+              </div><div class="cart-recap">
+              <div class="cart-recap__scroller">
+                <div class="card">
+                  <div class="card__section"><div class="cart-recap__price-line text--pull">
+                      <span class="cart-recap__price-line-label">Total</span>
+                      <span class="cart-recap__price-line-price">R$ 2,47</span>
+                    </div><div class="cart-recap__note">
+                        <button type="button" class="cart-recap__note-button" data-action="toggle-collapsible" data-collapsible-force-overflow="" aria-controls="order-note" aria-expanded="false">Instruções de envio<span>
+                            <span class="cart-recap__note-edit ">Editar</span><svg class="icon icon--arrow-bottom" viewBox="0 0 12 8" role="presentation">
+      <path stroke="currentColor" stroke-width="2" d="M10 2L6 6 2 2" fill="none" stroke-linecap="square"></path>
+    </svg></span>
+                        </button>
+
+                        <div id="order-note" class="collapsible" aria-hidden="true">
+                          <div class="cart-recap__note-inner">
+                            <textarea name="cart[note]" class="form__field form__field--textarea" rows="3" autofocus=""></textarea>
+                            <button type="button" class="form__submit form__submit--tight button button--secondary" data-action="save-note">Salvar</button>
+                          </div>
+                        </div>
+                      </div><div class="cart-recap__notices rte">
+                      <p>Impostos e frete calculados no checkout
+</p>
+                    </div>
+					<!--
+                    <form method="post" action="/cart" novalidate="novalidate" data-item-count="1">
+                      <input type="hidden" name="attributes[collection_products_per_page]" value="">
+                      <input type="hidden" name="attributes[collection_layout]" value="">
+                      <button type="submit" name="checkout" class="cart-recap__checkout button button--primary button--full button--large">Checkout</button></form>
+-->
+                  </div>
+                </div><div class="cart-recap__secure-payment">
+                    <p class="cart-recap__secure-payment-title"><svg class="icon icon--lock-2" viewBox="0 0 12 15" role="presentation">
+      <g stroke="currentColor" stroke-width="2" fill="none" fill-rule="evenodd" stroke-linecap="square">
+        <path d="M6 1C4.32 1 3 2.375 3 4.125V6h6V4.125C9 2.375 7.68 1 6 1zM1 6h10v8H1z"></path>
+      </g>
+    </svg> Pagamentos 100% seguros</p>
+
+                    <div class="cart-recap__secure-payment-list payment-list payment-list--centered">
+                      
+                    </div>
+                  </div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></section>
